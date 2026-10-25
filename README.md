@@ -72,7 +72,9 @@ Abra o endereço HTTPS no celular. No Android/Chrome, use **Instalar app** ou **
 - A pesquisa ignora maiúsculas e acentos e entende `Porche` como `Porsche`.
 - O formulário alerta quando o mesmo nome de modelo já existe, mostrando ano e cor para conferir variações.
 - A quantidade guarda exemplares repetidos sem exigir vários cadastros.
-- A leitura da foto apresenta sugestões de modelo, ano e código em cartões separados. Você escolhe quais aplicar; o texto bruto fica recolhido para consulta.
+- **Identificar pela foto** lê a foto da embalagem; **Fotografar nome de perto** usa uma segunda imagem só para reconhecimento, sem guardá-la. Enquadre o nome impresso ou o código Mattel de cinco caracteres com boa luz.
+- A leitura apresenta apenas sugestões legíveis de modelo e código. O ano só é sugerido se a própria imagem o identificar explicitamente como ano da edição; datas soltas e copyright são ignoradas. Você confirma cada campo antes de aplicá-lo.
+- Quando o código lido já está na sua garagem e aponta para um único modelo, o app oferece preencher com os dados desse cadastro. A cor permanece para você conferir, pois pode haver variação.
 - A foto abre inteira ao tocar na prévia do cadastro ou na imagem dos detalhes. Ao escolher uma foto nova, a leitura de texto usa o arquivo original; a cópia compactada é usada para armazenar e sincronizar.
 - No celular, os campos usam tamanho de texto adequado para evitar o zoom automático ao focar no iPhone; o formulário mantém as ações acessíveis e respeita as áreas seguras da tela.
 
@@ -80,7 +82,7 @@ Abra o endereço HTTPS no celular. No Android/Chrome, use **Instalar app** ou **
 
 Ler o UPC/EAN da embalagem é tecnicamente possível, mas não é suficiente para preencher o modelo de todo Hot Wheels: [carrinhos básicos do mesmo sortimento podem compartilhar o UPC](https://help.hobbydb.com/support/solutions/articles/36000262106-upc-codes). O número impresso perto do código de barras identifica o produto ou sortimento; ele não contém o nome do carrinho em seus dígitos. Por isso, preencher o modelo automaticamente apenas com o UPC poderia cadastrar o veículo errado.
 
-O campo **Código do modelo (SKU)** guarda o código alfanumérico impresso na embalagem, que costuma ser mais útil para diferenciar versões. Como evolução, um leitor de UPC pode consultar primeiro os registros da própria coleção e mostrar possíveis correspondências, exigindo confirmação visual quando o código for compartilhado. A [API nativa de leitura de códigos de barras](https://developer.mozilla.org/en-US/docs/Web/API/Barcode_Detection_API) ainda não funciona em todos os navegadores; para uma experiência consistente em iPhone e Android será preciso adicionar uma biblioteca local de leitura.
+O campo **Código do modelo (SKU)** guarda o código alfanumérico impresso na embalagem, que costuma ser mais útil para diferenciar versões. A [hobbyDB recomenda o número de produto Mattel no cartão](https://help.hobbydb.com/support/solutions/articles/36000580147-model-cars) para identificar lançamentos. O app tenta ler esse código pela foto e o compara com a sua coleção local. Sem uma base de produtos completa e gratuita, não há como garantir o preenchimento de um modelo novo apenas pelo código.
 
 ## Referências de produto
 

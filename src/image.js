@@ -43,15 +43,19 @@ export async function compressPhoto(file) {
 }
 
 export async function recognizePhoto(dataUrl, onProgress) {
-  const { createWorker } = await import('tesseract.js');
+  const { createWorker, PSM } = await import('tesseract.js');
   const worker = await createWorker('eng', 1, {
     logger: message => {
       if (message.status === 'recognizing text') onProgress?.(Math.round(message.progress * 100));
     }
   });
   try {
-    const { data } = await worker.recognize(dataUrl);
-    return data.text;
+    await worker.setParameters({ tessedit_pageseg_mode: PSM.SPARSE_TEXT });
+    const { data } = await worker.recognize(dataUrl, {}, { text: true, blocks: true });
+    const lines = (data.blocks || []).flatMap(block =>
+      (block.paragraphs || []).flatMap(paragraph =>
+        (paragraph.lines || []).map(line => ({ text: line.text, confidence: line.confidence }))));
+    return { text: data.text, lines };
   } finally {
     await worker.terminate();
   }

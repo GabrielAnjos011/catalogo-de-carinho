@@ -163,5 +163,14 @@ button{touch-action:manipulation}
 .photo-viewer img{min-height:0;flex:1;width:min(1100px,100%);object-fit:contain;touch-action:pinch-zoom}
 .photo-viewer p{min-height:43px;margin:0;display:grid;place-items:center;text-align:center;color:#c0d8c7;font-size:11px}
 .form-grid .field-hint{color:#7a8b81;font-size:10px;font-weight:500;line-height:1.4}
+.closeup-button{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:42px;margin-top:9px;padding:0 12px;border:1px solid #a9d3b7;border-radius:8px;background:#eef8f0;color:#126b48;font-size:11px;font-weight:800;text-align:center}
+.closeup-button:hover{background:#dff2e5}
+.scan-help{display:block;margin-top:6px;color:#718079;font-size:10px;line-height:1.4}
+.ocr-existing{display:grid;gap:4px;margin-top:12px;padding:12px;border:1px solid #b7ddc1;border-radius:9px;background:#f3fbf4}
+.ocr-existing>span{color:#17784f;font-size:10px;font-weight:800;letter-spacing:.8px}
+.ocr-existing>strong{font-family:Outfit,sans-serif;font-size:16px;line-height:1.25;overflow-wrap:anywhere}
+.ocr-existing p{margin:0;color:#65776d;font-size:11px;line-height:1.4}
+.ocr-existing button{justify-self:start;margin-top:5px}
+@media(max-width:560px){.closeup-button{width:100%}.ocr-suggestion{align-items:flex-start}.ocr-suggestion-action{min-height:31px;align-items:center}}
 @media(max-width:800px){.mobile-brand strong{font-size:13px}.top-actions{gap:9px}}
 @media(max-width:370px){.mobile-brand strong{font-size:12px}.sync-badge{padding:6px 8px;font-size:10px}}
