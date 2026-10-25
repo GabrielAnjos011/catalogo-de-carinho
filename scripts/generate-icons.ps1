@@ -4,22 +4,22 @@ foreach ($size in @(192, 512)) {
   $bitmap = [System.Drawing.Bitmap]::new($size, $size)
   $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
   $graphics.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
-  $graphics.Clear([System.Drawing.Color]::FromArgb(18, 26, 35))
+  $graphics.Clear([System.Drawing.Color]::FromArgb(16, 40, 32))
   $scale = $size / 512.0
   $graphics.ScaleTransform($scale, $scale)
-  $coral = [System.Drawing.SolidBrush]::new([System.Drawing.Color]::FromArgb(242, 81, 63))
-  $cream = [System.Drawing.SolidBrush]::new([System.Drawing.Color]::FromArgb(255, 240, 210))
-  $dark = [System.Drawing.SolidBrush]::new([System.Drawing.Color]::FromArgb(18, 26, 35))
-  $wheelPen = [System.Drawing.Pen]::new([System.Drawing.Color]::FromArgb(247, 245, 240), 12)
-  $graphics.FillRectangle($coral, 85, 260, 342, 83)
-  $graphics.FillEllipse($coral, 85, 216, 342, 104)
+  $green = [System.Drawing.SolidBrush]::new([System.Drawing.Color]::FromArgb(20, 122, 82))
+  $cream = [System.Drawing.SolidBrush]::new([System.Drawing.Color]::FromArgb(229, 245, 233))
+  $dark = [System.Drawing.SolidBrush]::new([System.Drawing.Color]::FromArgb(16, 40, 32))
+  $wheelPen = [System.Drawing.Pen]::new([System.Drawing.Color]::FromArgb(245, 248, 244), 12)
+  $graphics.FillRectangle($green, 85, 260, 342, 83)
+  $graphics.FillEllipse($green, 85, 216, 342, 104)
   $roof = [System.Drawing.Point[]]@(
     [System.Drawing.Point]::new(135, 264),
     [System.Drawing.Point]::new(163, 178),
     [System.Drawing.Point]::new(354, 178),
     [System.Drawing.Point]::new(385, 264)
   )
-  $graphics.FillPolygon($coral, $roof)
+  $graphics.FillPolygon($green, $roof)
   $window = [System.Drawing.Point[]]@(
     [System.Drawing.Point]::new(165, 243),
     [System.Drawing.Point]::new(180, 194),
@@ -38,7 +38,7 @@ foreach ($size in @(192, 512)) {
   $wheelPen.Dispose()
   $dark.Dispose()
   $cream.Dispose()
-  $coral.Dispose()
+  $green.Dispose()
   $graphics.Dispose()
   $bitmap.Dispose()
 }

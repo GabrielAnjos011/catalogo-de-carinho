@@ -1,4 +1,4 @@
-# Garagem Pocket
+# GaragemMelqueHW
 
 PWA pessoal para catalogar Hot Wheels e outros carrinhos. Funciona offline, tira foto pelo celular, tenta ler o texto da embalagem no próprio navegador, avisa sobre modelos já cadastrados e permite pesquisar antes de comprar. Também exporta e importa backup em JSON.
 
@@ -73,7 +73,14 @@ Abra o endereço HTTPS no celular. No Android/Chrome, use **Instalar app** ou **
 - O formulário alerta quando o mesmo nome de modelo já existe, mostrando ano e cor para conferir variações.
 - A quantidade guarda exemplares repetidos sem exigir vários cadastros.
 - A leitura da foto apresenta sugestões de modelo, ano e código em cartões separados. Você escolhe quais aplicar; o texto bruto fica recolhido para consulta.
+- A foto abre inteira ao tocar na prévia do cadastro ou na imagem dos detalhes. Ao escolher uma foto nova, a leitura de texto usa o arquivo original; a cópia compactada é usada para armazenar e sincronizar.
 - No celular, os campos usam tamanho de texto adequado para evitar o zoom automático ao focar no iPhone; o formulário mantém as ações acessíveis e respeita as áreas seguras da tela.
+
+## Código de barras e identificação
+
+Ler o UPC/EAN da embalagem é tecnicamente possível, mas não é suficiente para preencher o modelo de todo Hot Wheels: [carrinhos básicos do mesmo sortimento podem compartilhar o UPC](https://help.hobbydb.com/support/solutions/articles/36000262106-upc-codes). O número impresso perto do código de barras identifica o produto ou sortimento; ele não contém o nome do carrinho em seus dígitos. Por isso, preencher o modelo automaticamente apenas com o UPC poderia cadastrar o veículo errado.
+
+O campo **Código do modelo (SKU)** guarda o código alfanumérico impresso na embalagem, que costuma ser mais útil para diferenciar versões. Como evolução, um leitor de UPC pode consultar primeiro os registros da própria coleção e mostrar possíveis correspondências, exigindo confirmação visual quando o código for compartilhado. A [API nativa de leitura de códigos de barras](https://developer.mozilla.org/en-US/docs/Web/API/Barcode_Detection_API) ainda não funciona em todos os navegadores; para uma experiência consistente em iPhone e Android será preciso adicionar uma biblioteca local de leitura.
 
 ## Referências de produto
 
