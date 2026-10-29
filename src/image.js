@@ -42,21 +42,61 @@ export async function compressPhoto(file) {
   return result;
 }
 
-export async function recognizePhoto(dataUrl, onProgress) {
-  const { createWorker, PSM } = await import('tesseract.js');
-  const worker = await createWorker('eng', 1, {
-    logger: message => {
-      if (message.status === 'recognizing text') onProgress?.(Math.round(message.progress * 100));
-    }
-  });
-  try {
-    await worker.setParameters({ tessedit_pageseg_mode: PSM.SPARSE_TEXT });
-    const { data } = await worker.recognize(dataUrl, {}, { text: true, blocks: true });
-    const lines = (data.blocks || []).flatMap(block =>
-      (block.paragraphs || []).flatMap(paragraph =>
-        (paragraph.lines || []).map(line => ({ text: line.text, confidence: line.confidence }))));
-    return { text: data.text, lines };
-  } finally {
-    await worker.terminate();
+let workerPromise;
+let progressListener;
+
+async function prepareForOcr(image) {
+  if (!(image instanceof Blob)) return image;
+  let bitmap;
+  try { bitmap = await createImageBitmap(image, { imageOrientation: 'from-image' }); }
+  catch {
+    const url = URL.createObjectURL(image);
+    try {
+      bitmap = await new Promise((resolve, reject) => {
+        const element = new Image();
+        element.onload = () => resolve(element);
+        element.onerror = () => reject(new Error('Não foi possível abrir a foto para leitura.'));
+        element.src = url;
+      });
+    } finally { URL.revokeObjectURL(url); }
   }
+  const longest = Math.max(bitmap.width, bitmap.height);
+  const scale = Math.min(2, 2200 / longest);
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.round(bitmap.width * scale);
+  canvas.height = Math.round(bitmap.height * scale);
+  const context = canvas.getContext('2d');
+  context.fillStyle = '#ffffff';
+  context.fillRect(0, 0, canvas.width, canvas.height);
+  context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+  bitmap.close?.();
+  return canvas;
+}
+
+async function getWorker() {
+  if (!workerPromise) workerPromise = (async () => {
+    const { createWorker, PSM } = await import('tesseract.js');
+    const base = new URL(`${import.meta.env.BASE_URL}ocr/`, window.location.href).href;
+    const worker = await createWorker('eng', 1, {
+      workerPath: `${base}worker.min.js`, corePath: `${base}core`,
+      langPath: base.slice(0, -1), workerBlobURL: false,
+      logger: message => {
+        if (message.status === 'recognizing text') progressListener?.(Math.round(message.progress * 100));
+      }
+    });
+    await worker.setParameters({ tessedit_pageseg_mode: PSM.SPARSE_TEXT });
+    return worker;
+  })().catch(error => { workerPromise = undefined; throw error; });
+  return workerPromise;
+}
+
+export async function recognizePhoto(image, onProgress) {
+  progressListener = onProgress;
+  const worker = await getWorker();
+  const prepared = await prepareForOcr(image);
+  const { data } = await worker.recognize(prepared, {}, { text: true, blocks: true });
+  const lines = (data.blocks || []).flatMap(block =>
+    (block.paragraphs || []).flatMap(paragraph =>
+      (paragraph.lines || []).map(line => ({ text: line.text, confidence: line.confidence }))));
+  return { text: data.text || '', confidence: data.confidence, lines };
 }

@@ -26,22 +26,22 @@ test('não inventa sugestão a partir de texto sem dados úteis', () => {
   assert.equal(result.code, '');
 });
 
-test('ignora linhas de baixa confiança e códigos ambíguos', () => {
+test('mostra nome como hipótese mesmo com baixa confiança, mas não escolhe código ambíguo', () => {
   const result = extractHints({ text: 'PORSCHE 911 GT3 RS\nHKG52\nFYC78', lines: [
     { text: 'PORSCHE 911 GT3 RS', confidence: 42 },
     { text: 'HKG52', confidence: 96 },
     { text: 'FYC78', confidence: 94 }
   ] });
-  assert.equal(result.model, '');
+  assert.equal(result.model, 'PORSCHE 911 GT3 RS');
   assert.equal(result.code, '');
-  assert.equal(extractHints({ text: 'PORSCHE 911 GT3 RS', lines: [] }).model, '');
+  assert.equal(extractHints({ text: 'PORSCHE 911 GT3 RS', lines: [] }).model, 'PORSCHE 911 GT3 RS');
 });
 
-test('aceita nome sem marca somente em foto de perto e legível', () => {
+test('aceita nome sem marca em foto de perto sem bloquear pela confiança', () => {
   const reading = { text: 'BONE SHAKER', lines: [{ text: 'BONE SHAKER', confidence: 92 }] };
   assert.equal(extractHints(reading).model, '');
   assert.equal(extractHints(reading, { closeup: true }).model, 'BONE SHAKER');
-  assert.equal(extractHints({ text: 'BONE SHAKER', lines: [{ text: 'BONE SHAKER', confidence: 71 }] }, { closeup: true }).model, '');
+  assert.equal(extractHints({ text: 'BONE SHAKER', lines: [{ text: 'BONE SHAKER', confidence: 71 }] }, { closeup: true }).model, 'BONE SHAKER');
 });
 
 test('reaproveita cadastro apenas quando código e modelo são inequívocos', () => {

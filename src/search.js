@@ -37,27 +37,24 @@ function modelFromLine(line, closeup) {
     const cleaned = cleanModel(tail.slice(0, 52));
     return cleaned.split(/\s+/).length >= 2 ? cleaned : '';
   }
-  // Sem marca conhecida, só uma foto de perto legível justifica sugerir um nome.
+  // Uma foto de perto permite apresentar o nome como hipótese, sempre com confirmação humana.
   if (!closeup || line.length < 7 || line.length > 42 || /\d{4}|[<>_=]/.test(line)) return '';
   const cleaned = cleanModel(line);
   const words = cleaned.split(/\s+/);
   if (words.length < 2 || words.length > 6 || words.some(word => word.length > 16)) return '';
   if ((cleaned.match(/[a-z]{3,}/gi) || []).length < 2) return '';
-  const letters = line.replace(/[^A-Za-z]/g, '');
-  if (!letters || (letters.match(/[A-Z]/g) || []).length / letters.length < 0.7) return '';
   return cleaned;
 }
 
 export function extractHints(reading, { closeup = false } = {}) {
   const text = typeof reading === 'string' ? reading : reading?.text || '';
-  const structured = typeof reading !== 'string';
-  const lines = structured
-    ? (reading?.lines || []).map(line => ({ text: String(line.text || '').trim(), confidence: Number(line.confidence) || 0 }))
-    : text.split(/\r?\n/).map(line => ({ text: line.trim(), confidence: 100 }));
-  const legible = lines.filter(line => line.text && line.confidence >= 60);
-  const models = legible.map(line => ({ ...line, value: modelFromLine(line.text, closeup && line.confidence >= 85) }))
+  const lines = reading?.lines?.length
+    ? reading.lines.map(line => ({ text: String(line.text || '').trim(), confidence: Number(line.confidence) || 0 }))
+    : text.split(/\r?\n/).map(line => ({ text: line.trim(), confidence: 0 }));
+  const legible = lines.filter(line => line.text);
+  const models = legible.map(line => ({ ...line, value: modelFromLine(line.text, closeup) }))
     .filter(line => line.value).sort((a, b) => b.confidence - a.confidence);
-  const codeCandidates = legible.filter(line => line.confidence >= 85).flatMap(line => {
+  const codeCandidates = legible.flatMap(line => {
     if (/\basst\b|assortment|\bcase\b/i.test(line.text)) return [];
     return [...line.text.toUpperCase().matchAll(skuPattern)].map(match => match[0]);
   });

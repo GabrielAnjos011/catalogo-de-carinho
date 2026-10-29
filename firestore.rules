@@ -1,10 +1,29 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    match /users/{userId}/cars/{carId} {
-      allow read, delete: if request.auth != null && request.auth.uid == userId;
-      allow create, update: if request.auth != null
+    function approvedUser(userId) {
+      return request.auth != null
         && request.auth.uid == userId
+        && exists(/databases/$(database)/documents/approvedUsers/$(userId))
+        && get(/databases/$(database)/documents/approvedUsers/$(userId)).data.active == true;
+    }
+    match /approvedUsers/{userId} {
+      allow get: if request.auth != null && request.auth.uid == userId;
+      allow list, write: if false;
+    }
+    match /users/{userId} {
+      allow read: if approvedUser(userId);
+      allow create, update: if approvedUser(userId)
+        && request.resource.data.keys().hasOnly(['suffix', 'color', 'updatedAt'])
+        && request.resource.data.suffix is string
+        && request.resource.data.suffix.size() <= 18
+        && request.resource.data.color is string
+        && request.resource.data.color.matches('^#[0-9a-fA-F]{6}$')
+        && request.resource.data.updatedAt is int;
+    }
+    match /users/{userId}/cars/{carId} {
+      allow read, delete: if approvedUser(userId);
+      allow create, update: if approvedUser(userId)
         && request.resource.data.id == carId
         && request.resource.data.model is string
         && request.resource.data.model.size() > 0

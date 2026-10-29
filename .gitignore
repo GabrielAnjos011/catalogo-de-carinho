@@ -1,4 +1,9 @@
 node_modules/
 dist/
+public/ocr/
+data/
 .env.local
 .env.*.local
+.env
+.env.*
+!.env.example

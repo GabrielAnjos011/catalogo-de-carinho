@@ -10,8 +10,8 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['icon.svg'],
       manifest: {
-        name: 'GaragemMelqueHW — minha coleção de carrinhos',
-        short_name: 'GaragemMelqueHW',
+        name: 'Garagem — minha coleção de carrinhos',
+        short_name: 'Garagem',
         lang: 'pt-BR',
         description: 'Catálogo pessoal de carrinhos, disponível offline.',
         theme_color: '#102820',
@@ -26,8 +26,13 @@ export default defineConfig({
       },
       workbox: {
         globPatterns: ['**/*.{js,css,html,svg,png,woff2}'],
+        globIgnores: ['**/ocr/**'],
         navigateFallback: 'index.html',
         runtimeCaching: [{
+          urlPattern: ({ url }) => url.origin === self.location.origin && url.pathname.includes('/ocr/'),
+          handler: 'CacheFirst',
+          options: { cacheName: 'ocr-local', expiration: { maxEntries: 12, maxAgeSeconds: 60 * 60 * 24 * 365 } }
+        }, {
           urlPattern: /^https:\/\/fonts\.(?:googleapis|gstatic)\.com\//,
           handler: 'CacheFirst',
           options: { cacheName: 'fontes', expiration: { maxEntries: 20, maxAgeSeconds: 60 * 60 * 24 * 365 } }
