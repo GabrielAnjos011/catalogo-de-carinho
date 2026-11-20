@@ -42,10 +42,34 @@ export async function compressPhoto(file) {
   return result;
 }
 
+export async function preparePhotoForAI(file) {
+  if (typeof file === 'string' && file.startsWith('data:image/jpeg;base64,')) return file;
+  let bitmap;
+  try { bitmap = await createImageBitmap(file, { imageOrientation: 'from-image' }); }
+  catch {
+    const url = URL.createObjectURL(file);
+    try {
+      bitmap = await new Promise((resolve, reject) => {
+        const image = new Image();
+        image.onload = () => resolve(image);
+        image.onerror = () => reject(new Error('Não foi possível preparar a foto para análise.'));
+        image.src = url;
+      });
+    } finally { URL.revokeObjectURL(url); }
+  }
+  const scale = Math.min(1, 1800 / Math.max(bitmap.width, bitmap.height));
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.round(bitmap.width * scale);
+  canvas.height = Math.round(bitmap.height * scale);
+  canvas.getContext('2d').drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+  bitmap.close?.();
+  return canvas.toDataURL('image/jpeg', 0.85);
+}
+
 let workerPromise;
 let progressListener;
 
-async function prepareForOcr(image) {
+async function prepareForOcr(image, region) {
   if (!(image instanceof Blob)) return image;
   let bitmap;
   try { bitmap = await createImageBitmap(image, { imageOrientation: 'from-image' }); }
@@ -60,15 +84,19 @@ async function prepareForOcr(image) {
       });
     } finally { URL.revokeObjectURL(url); }
   }
-  const longest = Math.max(bitmap.width, bitmap.height);
-  const scale = Math.min(2, 2200 / longest);
+  const crop = region ? {
+    x: Math.round(bitmap.width * region.x), y: Math.round(bitmap.height * region.y),
+    width: Math.round(bitmap.width * region.width), height: Math.round(bitmap.height * region.height)
+  } : { x: 0, y: 0, width: bitmap.width, height: bitmap.height };
+  const longest = Math.max(crop.width, crop.height);
+  const scale = Math.min(3, 2200 / longest);
   const canvas = document.createElement('canvas');
-  canvas.width = Math.round(bitmap.width * scale);
-  canvas.height = Math.round(bitmap.height * scale);
+  canvas.width = Math.round(crop.width * scale);
+  canvas.height = Math.round(crop.height * scale);
   const context = canvas.getContext('2d');
   context.fillStyle = '#ffffff';
   context.fillRect(0, 0, canvas.width, canvas.height);
-  context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+  context.drawImage(bitmap, crop.x, crop.y, crop.width, crop.height, 0, 0, canvas.width, canvas.height);
   bitmap.close?.();
   return canvas;
 }
@@ -90,10 +118,10 @@ async function getWorker() {
   return workerPromise;
 }
 
-export async function recognizePhoto(image, onProgress) {
+export async function recognizePhoto(image, onProgress, region) {
   progressListener = onProgress;
   const worker = await getWorker();
-  const prepared = await prepareForOcr(image);
+  const prepared = await prepareForOcr(image, region);
   const { data } = await worker.recognize(prepared, {}, { text: true, blocks: true });
   const lines = (data.blocks || []).flatMap(block =>
     (block.paragraphs || []).flatMap(paragraph =>

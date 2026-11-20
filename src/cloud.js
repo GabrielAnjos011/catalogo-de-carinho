@@ -1,6 +1,7 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut } from 'firebase/auth';
 import { getFirestore, collection, doc, getDoc, getDocFromServer, getDocs, setDoc } from 'firebase/firestore';
+import { initializeAppCheck, ReCaptchaEnterpriseProvider } from 'firebase/app-check';
 import { allRecords, importCars } from './data';
 import { readProfile, storeProfile } from './profile';
 
@@ -13,6 +14,17 @@ const config = {
 
 export const cloudConfigured = Boolean(config.apiKey && config.authDomain && config.projectId && config.appId);
 const app = cloudConfigured ? initializeApp(config) : null;
+export const firebaseApp = app;
+if (app && import.meta.env.VITE_FIREBASE_APPCHECK_SITE_KEY) {
+  if (import.meta.env.DEV && import.meta.env.VITE_FIREBASE_APPCHECK_DEBUG_TOKEN) {
+    const debugToken = import.meta.env.VITE_FIREBASE_APPCHECK_DEBUG_TOKEN;
+    self.FIREBASE_APPCHECK_DEBUG_TOKEN = debugToken === 'true' ? true : debugToken;
+  }
+  initializeAppCheck(app, {
+    provider: new ReCaptchaEnterpriseProvider(import.meta.env.VITE_FIREBASE_APPCHECK_SITE_KEY),
+    isTokenAutoRefreshEnabled: true
+  });
+}
 const auth = app ? getAuth(app) : null;
 const firestore = app ? getFirestore(app) : null;
 const approvalKey = uid => `garagem-approved-v1-${uid}`;

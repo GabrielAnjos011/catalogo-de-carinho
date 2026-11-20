@@ -9,9 +9,9 @@ PWA pessoal para catalogar Hot Wheels e outros carrinhos. Funciona offline, tira
 | Interface | React + Vite + PWA | Instala na tela inicial e funciona offline. |
 | Dados no aparelho | IndexedDB separado por conta | Depois do primeiro acesso aprovado, a coleção abre mesmo sem internet e não se mistura com a de outra conta no mesmo aparelho. |
 | Acesso e sincronização | Firebase Authentication + Cloud Firestore no plano Spark | Entrada apenas com conta aprovada, sem backend próprio e sem pausa automática por inatividade documentada para o Firestore. |
-| Fotos | JPEG comprimido dentro do documento Firestore | Firebase Storage exige plano Blaze com cobrança habilitada; fotos pequenas cabem no limite de 1 MiB por documento. |
+| Fotos | Frente e verso em JPEG comprimido dentro do documento Firestore | Firebase Storage exige plano Blaze com cobrança habilitada; as duas fotos pequenas cabem no limite de 1 MiB por documento. |
 | Biblioteca de lançamentos | Dados da Hot Wheels Wiki incluídos no PWA | Busca gratuita e disponível offline, com fonte e versão exibidas no app. |
-| Leitura da embalagem | Tesseract.js no navegador | Arquivos de OCR servidos pelo próprio PWA, sem API paga. Sugestões precisam ser conferidas. |
+| Leitura da embalagem | Tesseract.js no navegador; Firebase AI Logic opcional | OCR local sem custo. A análise com Gemini exige configuração do App Check e internet; sugestões precisam ser conferidas. |
 | Hospedagem | GitHub Pages ou Vercel | Frontend estático gratuito para uso pessoal. |
 
 **Limites reais:** o Firestore Spark oferece atualmente 1 GiB de dados, 50 mil leituras/dia e 20 mil gravações/dia. Em caso de limite atingido, a sincronização para até a quota voltar; o catálogo local continua disponível. Fotos comprimidas ocupam espaço nesse 1 GiB. O plano gratuito e suas condições podem mudar no futuro, por isso exporte backups periodicamente. Nenhum serviço online pode garantir disponibilidade eterna ou gratuidade futura. O app nunca troca automaticamente para um plano pago.
@@ -57,15 +57,26 @@ Para revogar o acesso, altere `approvedUsers/{UID}.active` para `false` e, se de
 
 As variáveis `VITE_` aparecem no código público por definição. A proteção dos dados depende das regras do Firestore e da autenticação, nunca de manter essas chaves escondidas.
 
+### Ativar análise opcional por IA
+
+O botão **Analisar com IA gratuita** usa o SDK Web do **Firebase AI Logic** com o Gemini Developer API. Mantém o app estático, sem backend próprio. A chave padrão de configuração do Firebase e a chave de *site* do reCAPTCHA Enterprise são públicas. **Não crie uma chave da Gemini API para colocar em `VITE_`, em GitHub Variables ou em Secrets usados no build**: qualquer segredo incluído no build Vite fica acessível no navegador. O SDK Firebase AI Logic usa a integração gerenciada pelo Firebase.
+
+1. No Firebase Console, com o projeto ainda no plano **Spark** e sem faturamento, abra **AI Logic → Começar** e selecione **Gemini Developer API**. Conclua a configuração guiada e confirme que o modelo `gemini-3.5-flash-lite` está disponível para o projeto. Não escolha a API Vertex/Agent Platform, que requer faturamento.
+2. Em **App Check**, registre o aplicativo Web com **reCAPTCHA Enterprise**. Configure os domínios do site publicado e copie a **site key** pública para `VITE_FIREBASE_APPCHECK_SITE_KEY` no `.env.local`. Para GitHub Pages, crie também uma variável de Actions com o mesmo nome; o workflow já a usa. Na Vercel, adicione a variável ao projeto.
+3. Para testar no computador via `localhost`, acrescente `VITE_FIREBASE_APPCHECK_DEBUG_TOKEN=true` **somente** ao `.env.local`, reinicie `npm run dev` e abra o console do navegador. Copie o token de depuração exibido e cadastre-o em **App Check → Apps → Gerenciar tokens de depuração**. Esse token é privado: nunca o envie ao GitHub. Cada navegador/aparelho de teste usa seu próprio token. Não acrescente `localhost` aos domínios permitidos do reCAPTCHA para contornar o App Check.
+4. No celular pela rede local, cada navegador gera seu próprio token de depuração. É preciso lê-lo com a depuração remota do navegador e cadastrá-lo no App Check. Para um teste mais simples da IA e da experiência PWA completa, use a URL HTTPS publicada, com o domínio cadastrado na chave reCAPTCHA. Não coloque um token de depuração fixo nas variáveis de publicação.
+
+Após isso, fotografe frente e verso e toque em **Analisar com IA gratuita**. As fotos são enviadas ao Google para análise; o app só sugere os campos e pede que você confirme a versão da biblioteca. A leitura local e a digitação do código continuam disponíveis. O limite gratuito pode resultar em erro de quota e a precisão varia com a foto; o app não promete 99% de acerto. A análise opcional não é ativada sem a site key.
+
 ### Publicar no GitHub Pages
 
 1. Envie o repositório para o GitHub como **repositório público**, com a branch principal chamada `main` ou `master`. O GitHub Pages no plano GitHub Free exige repositório público; o código será público, mas os dados da coleção ficam protegidos pelo Firebase Authentication e pelas regras do Firestore.
 2. Em **Settings → Pages**, selecione **GitHub Actions** como origem.
-3. Em **Settings → Secrets and variables → Actions → Variables**, crie as quatro variáveis `VITE_FIREBASE_*` se quiser sincronização. O workflow já define `VITE_BASE_PATH` conforme o nome do repositório.
+3. Em **Settings → Secrets and variables → Actions → Variables**, crie as quatro variáveis `VITE_FIREBASE_*`. Elas são obrigatórias na versão publicada, pois o app exige login. O workflow já define `VITE_BASE_PATH` conforme o nome do repositório.
 4. Envie um commit para `main` ou `master`. O workflow publica `dist` automaticamente.
 5. Acrescente `SEU_USUARIO.github.io` aos domínios autorizados no Firebase Authentication.
 
-O endereço será `https://SEU_USUARIO.github.io/NOME_DO_REPOSITORIO/`. Se já publicou uma versão anterior, publique também as regras atualizadas de [firestore.rules](firestore.rules) para sincronizar o nome e a cor da garagem entre aparelhos.
+O endereço será `https://SEU_USUARIO.github.io/NOME_DO_REPOSITORIO/`. Antes de publicar esta versão, aprove seu UID em `approvedUsers` e publique as regras atualizadas de [firestore.rules](firestore.rules); caso contrário, o login não terá acesso à coleção.
 
 ### Publicar na Vercel
 
@@ -78,7 +89,7 @@ Abra o endereço HTTPS no celular. No Android/Chrome, use **Instalar app** ou **
 ## Explorar e cadastrar rápido
 
 - **Explorar** reúne a busca na sua coleção e uma biblioteca de **4.284 lançamentos Mainline de 2017 a 2026**. Pesquise por parte do nome, como `Porche 911`, ou pelo código de cinco caracteres da embalagem. O filtro de ano inclui todas essas edições.
-- **Adicionar** abre diretamente o cadastro manual. O próprio formulário oferece **Buscar na biblioteca** para preencher os dados gerais; em **Explorar**, o atalho **Cadastrar manualmente** fica no início da página.
+- **Adicionar** abre o cadastro inteligente. Digite o código Mattel de cinco caracteres para escolher o lançamento sem fotografar, ou fotografe frente e verso e toque em **Identificar pelas fotos**. O app lê a faixa do nome e o topo do verso, mostra as possíveis versões e pede que você confirme a correta. As fotos acompanham o cadastro rápido. Se não encontrar, continue no formulário manual.
 - Um cartão cinza significa que aquela versão ainda não foi vinculada à sua coleção. Ao cadastrá-la, sua foto aparece no cartão e o estado muda para **Tenho**. Variações de cor ou embalagem podem ser registradas separadamente.
 - Ao escolher um lançamento, o cadastro rápido já traz nome, série, ano da lista e código. Compare o código com a embalagem; depois informe foto, cor, quantidade e estado. Local e observações são opcionais.
 - Caso não encontre o carrinho, use **Cadastrar sem escolher da biblioteca**. Esse caminho também aceita miniaturas de outras marcas e anos.
@@ -96,7 +107,8 @@ Em **Ajustes → Identidade da sua garagem**, escolha a cor e escreva o compleme
 - A pesquisa ignora maiúsculas e acentos e entende `Porche` como `Porsche`.
 - O formulário alerta quando o mesmo nome de modelo já existe, mostrando ano e cor para conferir variações.
 - A quantidade guarda exemplares repetidos sem exigir vários cadastros.
-- **Identificar pela foto** lê a foto da embalagem; **Fotografar nome de perto** usa uma segunda imagem só para reconhecimento, sem guardá-la. Enquadre o nome impresso ou o código Mattel de cinco caracteres com boa luz. Se o código coincidir com a biblioteca, o app oferece as versões encontradas para escolha.
+- No cadastro novo, fotografe a frente inteira e o verso inteiro em boa luz. O nome costuma estar na faixa inferior da frente e no topo do verso; o código Mattel de cinco caracteres costuma ficar perto do gancho no verso. Você também pode usar **Fotografar código ou nome de perto** a qualquer momento. Essa foto extra é usada só para identificação; a leitura combina seus resultados com os da frente e do verso. A frente e o verso escolhidos ficam guardados no registro e podem ser ampliados.
+- O código pode ser digitado sem fotos. O UPC/EAN de barras não identifica sozinho um carrinho e não é usado para escolher a versão. O app apresenta candidatos para confirmação; não promete precisão de 99% em qualquer embalagem ou iluminação.
 - A leitura apresenta apenas sugestões legíveis de modelo e código. O ano só é sugerido se a própria imagem o identificar explicitamente como ano da edição; datas soltas e copyright são ignoradas. Você confirma cada campo antes de aplicá-lo.
 - Quando o código lido já está na sua garagem e aponta para um único modelo, o app oferece preencher com os dados desse cadastro. A cor permanece para você conferir, pois pode haver variação.
 - A foto abre inteira ao tocar na prévia do cadastro ou na imagem dos detalhes. Ao escolher uma foto nova, a leitura de texto usa o arquivo original; a cópia compactada é usada para armazenar e sincronizar.
@@ -117,7 +129,7 @@ A diferença aqui é priorizar a consulta rápida antes da compra, combinar uma 
 
 ## Observações técnicas
 
-- Cada registro sincronizado inclui uma foto JPEG comprimida. O código limita seu tamanho para ficar abaixo do máximo por documento do Firestore.
+- Cada registro pode sincronizar duas fotos JPEG comprimidas, da frente e do verso. O código limita o tamanho de cada foto para ficar abaixo do máximo por documento do Firestore.
 - A sincronização usa a data de última edição; se o mesmo carrinho for editado simultaneamente em dois aparelhos, a edição mais recente vence.
 - Exclusões são salvas como marcadores para impedir que um registro apagado volte na próxima sincronização.
 - O OCR lê texto e pode confundir caracteres ou variações do modelo. Compare cada sugestão com a foto antes de aplicá-la e revise o formulário antes de salvar.
