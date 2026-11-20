@@ -31,7 +31,7 @@ export async function analyzePackagingWithAI(images) {
   if (!sources.length) throw new Error('Adicione ao menos uma foto para analisar.');
   const parts = await Promise.all(sources.map(async image => {
     const dataUrl = await preparePhotoForAI(image);
-    return { type: 'inlineData', inlineData: { data: dataUrl.split(',')[1], mimeType: 'image/jpeg' } };
+    return { inlineData: { data: dataUrl.split(',')[1], mimeType: 'image/jpeg' } };
   }));
   const ai = getAI(firebaseApp, { backend: new GoogleAIBackend() });
   const model = getGenerativeModel(ai, {
