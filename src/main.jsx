@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { Search, Plus, CirclePlus, Camera, CarFront, Package, ShieldCheck, WifiOff, Cloud, CloudOff, Download, Upload, Settings, X, ArrowLeft, Check, Trash2, Pencil, ScanLine, Sparkles, LayoutGrid, ListFilter, RotateCw, AlertTriangle, HardDrive, LogOut, ChevronRight, ShoppingBag, ZoomIn } from 'lucide-react';
 import { allCars, allRecords, newCar, putCar, removeCar, importCars, migrateLegacyCollection } from './data';
-import { normalize, searchCars, possibleDuplicates, extractHints, findExactCodeMatch } from './search';
+import { normalize, searchCars, possibleDuplicates, ownedMatch, extractHints, findExactCodeMatch } from './search';
 import { compressPhoto, recognizePhoto } from './image';
 import { suggestReleasesFromOcr } from './catalog';
 import { applyProfile, readProfile, storeProfile } from './profile';
@@ -64,6 +64,8 @@ function App() {
   const importInput = useRef(null);
   const toastTimer = useRef();
   const activeUid = useRef(null);
+  const syncInFlight = useRef(false);
+  const lastApprovalCheck = useRef(0);
 
   async function reload(uid = user?.uid) {
     const items = await allCars(uid);
@@ -72,7 +74,8 @@ function App() {
   }
   function notify(message) { setToast(message); clearTimeout(toastTimer.current); toastTimer.current = setTimeout(() => setToast(''), 4300); }
   async function runSync(uid = user?.uid) {
-    if (!uid || syncing) return;
+    if (!uid || syncInFlight.current) return;
+    syncInFlight.current = true;
     setSyncing(true);
     try {
       const { syncCars, syncProfile } = await loadCloud();
@@ -81,10 +84,11 @@ function App() {
       if (activeUid.current !== uid) return;
       setProfile(syncedProfile);
       await reload(uid);
+      localStorage.setItem(`garagem-last-sync-v1-${uid}`, String(Date.now()));
       setSyncMessage(`Atualizado agora · ${result.uploaded} enviados, ${result.downloaded} recebidos`);
     } catch (error) {
       setSyncMessage(`Pendente: ${error.message}`);
-    } finally { setSyncing(false); }
+    } finally { syncInFlight.current = false; setSyncing(false); }
   }
 
   useEffect(() => {
@@ -100,6 +104,7 @@ function App() {
         if (!active) return;
         if (error) setAuthError(error.message || 'Não foi possível verificar o acesso.');
         if (current) {
+          lastApprovalCheck.current = Date.now();
           activeUid.current = current.uid;
           setAuthError('');
           try { await migrateLegacyCollection(current.uid); await reload(current.uid); }
@@ -114,19 +119,36 @@ function App() {
     return () => { active = false; window.removeEventListener('online', online); window.removeEventListener('offline', offline); unsubscribe(); clearTimeout(toastTimer.current); };
   }, []);
 
-  useEffect(() => { if (user && isOnline) runSync(user.uid); }, [user?.uid, isOnline]);
+  useEffect(() => {
+    if (!user || !isOnline) return;
+    let cancelled = false;
+    let timer;
+    const uid = user.uid;
+    (async () => {
+      const last = Number(localStorage.getItem(`garagem-last-sync-v1-${uid}`)) || 0;
+      if (Date.now() - last < 5 * 60 * 1000) {
+        const records = await allRecords(uid);
+        const pendingCar = records.some(car => Number(car.updatedAt) > last);
+        const pendingProfile = Number(readProfile(uid).updatedAt) > last;
+        if (!pendingCar && !pendingProfile) return;
+      }
+      if (!cancelled) timer = setTimeout(() => runSync(uid), 700);
+    })().catch(() => { if (!cancelled) timer = setTimeout(() => runSync(uid), 700); });
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [user?.uid, isOnline]);
 
   useEffect(() => {
     if (!user || !isOnline) return;
     const check = () => {
       if (document.visibilityState !== 'visible') return;
+      if (Date.now() - lastApprovalCheck.current < 15 * 60 * 1000) return;
+      lastApprovalCheck.current = Date.now();
       loadCloud().then(({ refreshApproval }) => refreshApproval())
         .then(allowed => { if (!allowed) setAuthError('Seu acesso à garagem foi revogado.'); })
         .catch(() => {});
     };
     window.addEventListener('focus', check);
     document.addEventListener('visibilitychange', check);
-    check();
     return () => { window.removeEventListener('focus', check); document.removeEventListener('visibilitychange', check); };
   }, [user?.uid, isOnline]);
 
@@ -154,6 +176,8 @@ function App() {
     const model = car.model.trim();
     if (!model) { notify('Informe o modelo do carrinho.'); return; }
     if (!Number.isInteger(Number(car.quantity)) || Number(car.quantity) < 1) { notify('A quantidade precisa ser pelo menos 1.'); return; }
+    const existing = ownedMatch(cars, car);
+    if (existing) { notify(`Você já tem ${existing.model}. Abra o registro para ajustar a quantidade.`); return false; }
     const saved = { ...car, model, quantity: Number(car.quantity), updatedAt: Date.now() };
     try {
       await putCar(saved, user?.uid);
@@ -163,18 +187,21 @@ function App() {
       setSelected(null);
       setView(view === 'check' ? 'check' : 'collection');
       notify('Carrinho salvo na sua garagem.');
-      if (user && isOnline) await runSync(user.uid);
+      if (user && isOnline) loadCloud().then(({ uploadCar }) => uploadCar(user.uid, saved))
+        .then(() => setSyncMessage('Carrinho enviado à nuvem'))
+        .catch(() => setSyncMessage('Carrinho salvo aqui; sincronização pendente'));
       return true;
     } catch (error) { notify(`Não foi possível salvar: ${error.message}`); return false; }
   }
 
   async function deleteSelected() {
     if (!selected || !window.confirm(`Excluir ${selected.model} da coleção?`)) return;
-    await removeCar(selected, user?.uid);
+    const removed = await removeCar(selected, user?.uid);
     await reload();
     setSelected(null);
     notify('Carrinho excluído.');
-    if (user && isOnline) await runSync(user.uid);
+    if (user && isOnline) loadCloud().then(({ uploadCar }) => uploadCar(user.uid, removed))
+      .catch(() => setSyncMessage('Exclusão salva aqui; sincronização pendente'));
   }
 
   function openAdd() { setSelected(null); setQuickRelease(null); setDraft(newCar()); }
@@ -189,7 +216,8 @@ function App() {
     const saved = storeProfile(value, false, user?.uid);
     setProfile(saved);
     notify('A identidade da sua garagem foi atualizada.');
-    if (user && isOnline) runSync(user.uid);
+    if (user && isOnline) loadCloud().then(({ uploadProfile }) => uploadProfile(user.uid, saved))
+      .catch(() => setSyncMessage('Personalização salva aqui; sincronização pendente'));
   }
   function addFromCheck() { setDraft({ ...newCar(), model: checkQuery.trim() }); setSelected(null); }
   async function handleExport() {
@@ -267,7 +295,7 @@ function App() {
          <footer className="page-footer">GARAGEM{profile.suffix.toUpperCase()} <span>·</span> FEITO PARA SUA COLEÇÃO</footer>
         </div>
         <div hidden={view !== 'check'}><Explore cars={cars} query={checkQuery} setQuery={setCheckQuery} onSelect={setSelected} onPick={pickRelease} onManual={addFromExplore} /></div>
-      </div> : <div className="page-content settings-page"><span className="eyebrow"><span className="eyebrow-line"/> CONTROLE TOTAL</span><h1>Configurações<span className="accent-dot">.</span></h1><p className="page-subtitle">Seus dados, suas escolhas.</p><div className="settings-grid"><ProfileEditor profile={profile} onSave={saveIdentity}/><section className="setting-panel"><div className="panel-head"><span className="panel-icon"><Cloud size={24}/></span><div><h2>Sincronização na nuvem</h2><p>Guarde uma cópia e acesse em outros aparelhos.</p></div></div>{!cloudConfigured ? <div className="notice"><CloudOff size={21}/><p>O Firebase ainda não foi configurado. O catálogo funciona normalmente neste aparelho. Siga o README para ativar a sincronização gratuita.</p></div> : user ? <div className="cloud-connected"><div className="connected-user"><span><Check size={20}/></span><div><strong>{user.email}</strong><small>{syncMessage || 'Conta conectada'}</small></div></div><div className="settings-actions"><button className="secondary" disabled={syncing || !isOnline} onClick={() => runSync()}><RotateCw size={17} className={syncing ? 'spinning' : ''}/>{syncing ? 'Sincronizando...' : 'Sincronizar agora'}</button><button className="ghost" onClick={leaveAccount}><LogOut size={17}/> Sair da conta</button></div></div> : null}</section><section className="setting-panel"><div className="panel-head"><span className="panel-icon amber"><HardDrive size={24}/></span><div><h2>Backup da coleção</h2><p>Tenha uma cópia independente dos seus dados.</p></div></div><div className="backup-actions"><div><strong>Exportar catálogo</strong><span>Baixa um arquivo JSON com fotos e informações.</span><button className="secondary" onClick={handleExport}><Download size={18}/> Baixar backup</button></div><div><strong>Importar backup</strong><span>Restaura registros de um arquivo exportado.</span><button className="secondary" onClick={() => importInput.current?.click()}><Upload size={18}/> Escolher arquivo</button><input ref={importInput} type="file" accept="application/json,.json" hidden onChange={e => handleImport(e.target.files?.[0])}/></div></div></section></div><div className="privacy-note"><ShieldCheck size={20}/><span>As fotos são comprimidas no seu próprio aparelho. O reconhecimento de texto também roda no navegador. Nenhuma IA paga é necessária.</span></div></div>}
+      </div> : <div className="page-content settings-page"><span className="eyebrow"><span className="eyebrow-line"/> CONTROLE TOTAL</span><h1>Configurações<span className="accent-dot">.</span></h1><p className="page-subtitle">Seus dados, suas escolhas.</p><div className="settings-grid"><ProfileEditor profile={profile} onSave={saveIdentity}/><section className="setting-panel"><div className="panel-head"><span className="panel-icon"><Cloud size={24}/></span><div><h2>Sincronização na nuvem</h2><p>Guarde uma cópia e acesse em outros aparelhos.</p></div></div>{!cloudConfigured ? <div className="notice"><CloudOff size={21}/><p>O Firebase ainda não foi configurado. O catálogo funciona normalmente neste aparelho. Siga o README para ativar a sincronização gratuita.</p></div> : user ? <div className="cloud-connected"><div className="connected-user"><span><Check size={20}/></span><div><strong>{user.email}</strong><small>{syncMessage || 'Conta conectada'}</small></div></div><div className="settings-actions"><button className="secondary" disabled={syncing || !isOnline} onClick={() => runSync()}><RotateCw size={17} className={syncing ? 'spinning' : ''}/>{syncing ? 'Sincronizando...' : 'Sincronizar agora'}</button><button className="ghost" onClick={leaveAccount}><LogOut size={17}/> Sair da conta</button></div></div> : null}</section><section className="setting-panel"><div className="panel-head"><span className="panel-icon amber"><HardDrive size={24}/></span><div><h2>Backup da coleção</h2><p>Tenha uma cópia independente dos seus dados.</p></div></div><div className="backup-actions"><div><strong>Exportar catálogo</strong><span>Baixa um arquivo JSON com fotos e informações.</span><button className="secondary" onClick={handleExport}><Download size={18}/> Baixar backup</button></div><div><strong>Importar backup</strong><span>Restaura registros de um arquivo exportado.</span><button className="secondary" onClick={() => importInput.current?.click()}><Upload size={18}/> Escolher arquivo</button><input ref={importInput} type="file" accept="application/json,.json" hidden onChange={e => handleImport(e.target.files?.[0])}/></div></div></section></div><div className="privacy-note"><ShieldCheck size={20}/><span>As fotos são comprimidas no aparelho. A leitura local roda no navegador; ao escolher Analisar com IA, suas fotos são enviadas ao Google.</span></div></div>}
     </main>
 
     <nav className="mobile-nav" aria-label="Menu móvel">
@@ -277,9 +305,9 @@ function App() {
       <button className={`mobile-tab ${view === 'settings' ? 'active' : ''}`} aria-current={view === 'settings' ? 'page' : undefined} onClick={() => setView('settings')}><span className="tab-icon"><Settings size={21}/></span><span>Ajustes</span></button>
     </nav>
 
-    {selected && !draft && <div className="modal-backdrop" onMouseDown={e => { if (e.target === e.currentTarget) setSelected(null); }}><div className="detail-modal" role="dialog" aria-modal="true" aria-label={`Detalhes de ${selected.model}`}><button className="close-button" onClick={() => setSelected(null)} aria-label="Fechar"><X size={21}/></button><div className="detail-photo">{selected.photo ? <button type="button" className="photo-open" onClick={() => setPreviewPhoto(selected.photo)} aria-label="Ampliar foto do carrinho"><img src={selected.photo} alt={`Foto de ${selected.model}`}/><span><ZoomIn size={17}/> Ver foto completa</span></button> : <Placeholder/>}</div><div className="detail-body"><span className="eyebrow">{selected.maker || 'HOT WHEELS'} · {selected.condition || 'LACRADO'}</span><h2>{selected.model}</h2>{selected.backPhoto && <button type="button" className="detail-back" onClick={() => setPreviewPhoto(selected.backPhoto)}><ZoomIn size={17}/> Ver verso da embalagem</button>}<div className="detail-facts">{[['Série', selected.series], ['Ano', selected.year], ['Cor', selected.color], ['Código', selected.code], ['Quantidade', selected.quantity], ['Local', selected.location], ['Adicionado', dateLabel(selected.createdAt)]].filter(([, value]) => value).map(([label, value]) => <div key={label}><small>{label}</small><strong>{value}</strong></div>)}</div>{selected.notes && <p className="detail-notes">{selected.notes}</p>}<div className="detail-actions"><button className="primary" onClick={() => setDraft({ ...selected })}><Pencil size={17}/> Editar</button><button className="danger" onClick={deleteSelected}><Trash2 size={17}/> Excluir</button></div></div></div></div>}
+    {selected && !draft && <div className="modal-backdrop" onMouseDown={e => { if (e.target === e.currentTarget) setSelected(null); }}><div className="detail-modal" role="dialog" aria-modal="true" aria-label={`Detalhes de ${selected.model}`}><button className="close-button" onClick={() => setSelected(null)} aria-label="Fechar"><X size={21}/></button><div className="detail-photo">{selected.photo ? <button type="button" className="photo-open" onClick={() => setPreviewPhoto(selected.photo)} aria-label="Ampliar foto do carrinho"><img src={selected.photo} alt={`Foto de ${selected.model}`}/><span><ZoomIn size={17}/> Ver foto completa</span></button> : <Placeholder/>}</div><div className="detail-body"><span className="eyebrow">{selected.maker || 'HOT WHEELS'} · {selected.condition || 'LACRADO'}</span><h2>{selected.model}</h2>{selected.backPhoto && <button type="button" className="detail-back" onClick={() => setPreviewPhoto(selected.backPhoto)}><ZoomIn size={17}/> Ver verso da embalagem</button>}<div className="detail-facts">{[['Série', selected.series], ['Nº da série', selected.seriesNo], ['Nº de coleção', selected.collectorNo], ['Ano', selected.year], ['Cor', selected.color], ['Código', selected.code], ['Quantidade', selected.quantity], ['Local', selected.location], ['Adicionado', dateLabel(selected.createdAt)]].filter(([, value]) => value).map(([label, value]) => <div key={label}><small>{label}</small><strong>{value}</strong></div>)}</div>{selected.notes && <p className="detail-notes">{selected.notes}</p>}<div className="detail-actions"><button className="primary" onClick={() => setDraft({ ...selected })}><Pencil size={17}/> Editar</button><button className="danger" onClick={deleteSelected}><Trash2 size={17}/> Excluir</button></div></div></div></div>}
     {previewPhoto && <PhotoViewer photo={previewPhoto} alt={selected ? `Foto de ${selected.model}` : 'Foto do carrinho'} onClose={() => setPreviewPhoto(null)} />}
-    {draft && <CarForm draft={draft} cars={cars} onClose={() => setDraft(null)} onSave={saveDraft} onPickRelease={pickRelease} onBrowseLibrary={browseFromForm} notify={notify} />}
+    {draft && <CarForm draft={draft} cars={cars} uid={user?.uid} onClose={() => setDraft(null)} onSave={saveDraft} onPickRelease={pickRelease} onBrowseLibrary={browseFromForm} onSelectOwned={car => { setDraft(null); setSelected(car); }} notify={notify} />}
     {quickRelease && <QuickAdd key={quickRelease.id} release={quickRelease} cars={cars} onClose={() => setQuickRelease(null)} onSave={saveDraft} onSelect={car => { setQuickRelease(null); setSelected(car); }} notify={notify} />}
     {toast && <div className="toast" role="status"><Check size={18}/>{toast}<button onClick={() => setToast('')} aria-label="Fechar aviso"><X size={16}/></button></div>}
   </div>;
@@ -301,13 +329,14 @@ function PurchaseCheck({ cars, query, setQuery, onSelect, onAdd }) {
   </section>;
 }
 
-function CarForm({ draft: initial, cars, onClose, onSave, onPickRelease, onBrowseLibrary, notify }) {
+function CarForm({ draft: initial, cars, uid, onClose, onSave, onPickRelease, onBrowseLibrary, onSelectOwned, notify }) {
   const [form, setForm] = useState(initial);
   const editing = cars.some(car => car.id === initial.id);
   const [ocrBusy, setOcrBusy] = useState(false);
   const [ocrProgress, setOcrProgress] = useState(0);
   const [ocrResult, setOcrResult] = useState(null);
   const [previewPhoto, setPreviewPhoto] = useState('');
+  const [identifiedOwned, setIdentifiedOwned] = useState(null);
   const input = useRef(null);
   const backInput = useRef(null);
   const closeupInput = useRef(null);
@@ -322,6 +351,8 @@ function CarForm({ draft: initial, cars, onClose, onSave, onPickRelease, onBrows
     onBrowseLibrary(form.model);
   };
   const matches = useMemo(() => possibleDuplicates(cars, form), [cars, form.model]);
+  const exactOwned = ownedMatch(cars, form);
+  const saveBlocked = !editing && Boolean(exactOwned || identifiedOwned);
   async function handlePhoto(file) {
     if (!file) return;
     try { const photo = await compressPhoto(file); originalPhoto.current = file; set('photo', photo); setOcrResult(null); notify('Foto adicionada. Toque na prévia para vê-la inteira.'); }
@@ -358,7 +389,7 @@ function CarForm({ draft: initial, cars, onClose, onSave, onPickRelease, onBrows
       code: existing.code || current.code }));
     notify('Dados do seu cadastro aplicados. Confira a cor e a quantidade antes de salvar.');
   }
-  return <><div className="modal-backdrop form-layer"><div className="form-modal" role="dialog" aria-modal="true" aria-label={editing ? 'Editar carrinho' : 'Adicionar carrinho'}><header className="form-header"><button onClick={close} className="back-button"><ArrowLeft size={20}/> Voltar</button><span>{editing ? 'EDITAR REGISTRO' : 'NOVO REGISTRO'}</span><button onClick={close} className="close-button" aria-label="Fechar"><X size={21}/></button></header><div className="form-scroll"><div className="form-intro"><span className="eyebrow"><span className="eyebrow-line"/> SUA COLEÇÃO CRESCE</span><h2>{editing ? 'Editar carrinho' : 'Adicionar carrinho'}<span className="accent-dot">.</span></h2><p>Adicione uma foto se quiser e complete as informações. Leva menos de um minuto.</p></div>{!editing && <button type="button" className="form-library-link" onClick={browseLibrary}><Search size={18}/><span><strong>Buscar na biblioteca</strong><small>Use os dados do lançamento para preencher mais rápido.</small></span><ChevronRight size={18}/></button>}{!editing ? <SmartCapture form={form} onSet={set} onPickRelease={onPickRelease} notify={notify} /> : <div className="photo-upload"><div className="upload-preview">{form.photo ? <button type="button" className="photo-open" onClick={() => setPreviewPhoto('front')} aria-label="Ampliar foto antes de salvar"><img src={form.photo} alt="Prévia do carrinho"/><span><ZoomIn size={16}/> Ver foto</span></button> : <Placeholder/>}</div><div className="upload-controls"><span className="step-label">01 / FOTO OPCIONAL</span><h3>Foto da embalagem</h3><p>Fotografe a frente do blister ou escolha uma imagem. A foto será comprimida para economizar espaço.</p><div className="upload-buttons"><button type="button" className="secondary" onClick={() => input.current?.click()}><Camera size={18}/>{form.photo ? 'Trocar foto' : 'Tirar ou escolher foto'}</button>{form.photo && <button type="button" className="scan-button" disabled={ocrBusy} onClick={() => scan()}><ScanLine size={18}/>{ocrBusy ? `Lendo texto ${ocrProgress}%` : 'Identificar pela foto'}</button>}</div><input ref={input} type="file" accept="image/*" capture="environment" hidden onChange={e => handlePhoto(e.target.files?.[0])}/><div className="edit-back-actions"><button type="button" className="secondary" onClick={() => backInput.current?.click()}><Camera size={17}/>{form.backPhoto ? 'Trocar foto do verso' : 'Adicionar foto do verso'}</button>{form.backPhoto && <button type="button" className="ghost" onClick={() => setPreviewPhoto('back')}><ZoomIn size={17}/> Ver verso</button>}<input ref={backInput} type="file" accept="image/*" capture="environment" hidden onChange={e => handleBackPhoto(e.target.files?.[0])}/></div><button type="button" className="closeup-button" disabled={ocrBusy} onClick={() => closeupInput.current?.click()}><ScanLine size={17}/> Fotografar nome de perto</button><small className="scan-help" aria-live="polite">{ocrBusy ? `Lendo a imagem… ${ocrProgress}%` : 'Enquadre só o nome do carrinho ou o código de 5 caracteres. Esta foto é usada apenas na leitura.'}</small><input ref={closeupInput} type="file" accept="image/*" capture="environment" hidden onChange={e => { const file = e.target.files?.[0]; e.target.value = ''; if (file) scan(file, true); }}/></div>{ocrResult && <OcrReview result={ocrResult} form={form} onApply={set} onUseExisting={useExisting} onPickRelease={item => onPickRelease(item, form.photo)} />}</div>}<div className="form-section-head"><span className="step-label">02 / INFORMAÇÕES</span><h3>Detalhes do carrinho</h3><p>O nome do modelo é o único campo obrigatório.</p></div><form id="car-form" onSubmit={e => { e.preventDefault(); onSave(form); }}><div className="form-grid"><label className="wide">Modelo <span>*</span><input required value={form.model} onChange={e => set('model', e.target.value)} placeholder="Ex.: Porsche 911 GT3 RS"/></label><label>Marca<input value={form.maker} onChange={e => set('maker', e.target.value)} placeholder="Hot Wheels"/></label><label>Série / linha<input value={form.series} onChange={e => set('series', e.target.value)} placeholder="Ex.: HW Exotics"/></label><label>Ano<input inputMode="numeric" value={form.year} onChange={e => set('year', e.target.value)} placeholder="Ex.: 2024"/></label><label>Cor<input value={form.color} onChange={e => set('color', e.target.value)} placeholder="Ex.: Vermelho"/></label><label>Código do modelo (SKU)<input value={form.code} onChange={e => set('code', e.target.value)} placeholder="Ex.: HKG52"/><small className="field-hint">Fica na embalagem e pode diferenciar o carrinho do UPC.</small></label><label>Quantidade<input type="number" min="1" step="1" value={form.quantity} onChange={e => set('quantity', e.target.value)}/></label><label>Estado<select value={form.condition} onChange={e => set('condition', e.target.value)}><option>Lacrado</option><option>Solto</option><option>Outro</option></select></label><label>Onde está guardado<input value={form.location} onChange={e => set('location', e.target.value)} placeholder="Ex.: Caixa A, estante"/></label><label className="wide">Observações<textarea rows="3" value={form.notes} onChange={e => set('notes', e.target.value)} placeholder="Variação, rodas, detalhes especiais..."/></label></div>{matches.length > 0 && <div className="duplicate-alert"><AlertTriangle size={21}/><div><strong>Você já tem {matches.length} registro(s) desse modelo</strong><p>{matches.slice(0, 3).map(car => `${car.model}${car.year ? ` (${car.year})` : ''}${car.color ? ` · ${car.color}` : ''}`).join(' · ')}</p></div></div>}</form></div><footer className="form-footer"><span><ShieldCheck size={17}/> Seus dados ficam salvos neste aparelho</span><div><button type="button" className="ghost" onClick={close}>Cancelar</button><button type="submit" form="car-form" className="primary"><Check size={18}/> Salvar carrinho</button></div></footer></div></div>{previewPhoto && <PhotoViewer photo={previewPhoto === 'back' ? form.backPhoto : form.photo} alt={previewPhoto === 'back' ? 'Verso da embalagem antes de salvar' : 'Frente da embalagem antes de salvar'} onClose={() => setPreviewPhoto('')} />}</>;
+  return <><div className="modal-backdrop form-layer"><div className="form-modal" role="dialog" aria-modal="true" aria-label={editing ? 'Editar carrinho' : 'Adicionar carrinho'}><header className="form-header"><button onClick={close} className="back-button"><ArrowLeft size={20}/> Voltar</button><span>{editing ? 'EDITAR REGISTRO' : 'NOVO REGISTRO'}</span><button onClick={close} className="close-button" aria-label="Fechar"><X size={21}/></button></header><div className="form-scroll"><div className="form-intro"><span className="eyebrow"><span className="eyebrow-line"/> SUA COLEÇÃO CRESCE</span><h2>{editing ? 'Editar carrinho' : 'Adicionar carrinho'}<span className="accent-dot">.</span></h2><p>Adicione uma foto se quiser e complete as informações. Leva menos de um minuto.</p></div>{!editing && <button type="button" className="form-library-link" onClick={browseLibrary}><Search size={18}/><span><strong>Buscar na biblioteca</strong><small>Use os dados do lançamento para preencher mais rápido.</small></span><ChevronRight size={18}/></button>}{!editing ? <SmartCapture form={form} cars={cars} uid={uid} onSet={set} onPickRelease={onPickRelease} onSelectOwned={onSelectOwned} onOwnedChange={setIdentifiedOwned} notify={notify} /> : <div className="photo-upload"><div className="upload-preview">{form.photo ? <button type="button" className="photo-open" onClick={() => setPreviewPhoto('front')} aria-label="Ampliar foto antes de salvar"><img src={form.photo} alt="Prévia do carrinho"/><span><ZoomIn size={16}/> Ver foto</span></button> : <Placeholder/>}</div><div className="upload-controls"><span className="step-label">01 / FOTO OPCIONAL</span><h3>Foto da embalagem</h3><p>Fotografe a frente do blister ou escolha uma imagem. A foto será comprimida para economizar espaço.</p><div className="upload-buttons"><button type="button" className="secondary" onClick={() => input.current?.click()}><Camera size={18}/>{form.photo ? 'Trocar foto' : 'Tirar ou escolher foto'}</button>{form.photo && <button type="button" className="scan-button" disabled={ocrBusy} onClick={() => scan()}><ScanLine size={18}/>{ocrBusy ? `Lendo texto ${ocrProgress}%` : 'Identificar pela foto'}</button>}</div><input ref={input} type="file" accept="image/*" capture="environment" hidden onChange={e => handlePhoto(e.target.files?.[0])}/><div className="edit-back-actions"><button type="button" className="secondary" onClick={() => backInput.current?.click()}><Camera size={17}/>{form.backPhoto ? 'Trocar foto do verso' : 'Adicionar foto do verso'}</button>{form.backPhoto && <button type="button" className="ghost" onClick={() => setPreviewPhoto('back')}><ZoomIn size={17}/> Ver verso</button>}<input ref={backInput} type="file" accept="image/*" capture="environment" hidden onChange={e => handleBackPhoto(e.target.files?.[0])}/></div><button type="button" className="closeup-button" disabled={ocrBusy} onClick={() => closeupInput.current?.click()}><ScanLine size={17}/> Fotografar nome de perto</button><small className="scan-help" aria-live="polite">{ocrBusy ? `Lendo a imagem… ${ocrProgress}%` : 'Enquadre só o nome do carrinho ou o código de 5 caracteres. Esta foto é usada apenas na leitura.'}</small><input ref={closeupInput} type="file" accept="image/*" capture="environment" hidden onChange={e => { const file = e.target.files?.[0]; e.target.value = ''; if (file) scan(file, true); }}/></div>{ocrResult && <OcrReview result={ocrResult} form={form} onApply={set} onUseExisting={useExisting} onPickRelease={item => onPickRelease(item, form.photo)} />}</div>}<div className="form-section-head"><span className="step-label">02 / INFORMAÇÕES</span><h3>Detalhes do carrinho</h3><p>O nome do modelo é o único campo obrigatório.</p></div><form id="car-form" onSubmit={e => { e.preventDefault(); if (saveBlocked) { notify("Você já tem este carrinho. Abra o cadastro existente para ajustar a quantidade."); return; } onSave(form); }}><div className="form-grid"><label className="wide">Modelo <span>*</span><input required value={form.model} onChange={e => set('model', e.target.value)} placeholder="Ex.: Porsche 911 GT3 RS"/></label><label>Marca<input value={form.maker} onChange={e => set('maker', e.target.value)} placeholder="Hot Wheels"/></label><label>Série / linha<input value={form.series} onChange={e => set('series', e.target.value)} placeholder="Ex.: HW Exotics"/></label><label>Nº da série<input value={form.seriesNo || ''} onChange={e => set('seriesNo', e.target.value)} placeholder="Ex.: 8/10"/></label><label>Nº de coleção<input value={form.collectorNo || ''} onChange={e => set('collectorNo', e.target.value)} placeholder="Ex.: 124"/></label><label>Ano<input inputMode="numeric" value={form.year} onChange={e => set('year', e.target.value)} placeholder="Ex.: 2024"/></label><label>Cor<input value={form.color} onChange={e => set('color', e.target.value)} placeholder="Ex.: Vermelho"/></label><label>Código do modelo (SKU)<input value={form.code} onChange={e => set('code', e.target.value)} placeholder="Ex.: HKG52"/><small className="field-hint">Fica na embalagem e pode diferenciar o carrinho do UPC.</small></label><label>Quantidade<input type="number" min="1" step="1" value={form.quantity} onChange={e => set('quantity', e.target.value)}/></label><label>Estado<select value={form.condition} onChange={e => set('condition', e.target.value)}><option>Lacrado</option><option>Solto</option><option>Outro</option></select></label><label>Onde está guardado<input value={form.location} onChange={e => set('location', e.target.value)} placeholder="Ex.: Caixa A, estante"/></label><label className="wide">Observações<textarea rows="3" value={form.notes} onChange={e => set('notes', e.target.value)} placeholder="Variação, rodas, detalhes especiais..."/></label></div>{matches.length > 0 && <div className="duplicate-alert"><AlertTriangle size={21}/><div><strong>Você já tem {matches.length} registro(s) desse modelo</strong><p>{matches.slice(0, 3).map(car => `${car.model}${car.year ? ` (${car.year})` : ''}${car.color ? ` · ${car.color}` : ''}`).join(' · ')}</p></div></div>}{saveBlocked && <div className="duplicate-alert" role="alert"><AlertTriangle size={21}/><div><strong>Este carrinho já está na garagem</strong><p>Abra o cadastro existente para conferir ou ajustar a quantidade.</p><button type="button" onClick={() => onSelectOwned(exactOwned || identifiedOwned)}>Ver meu cadastro</button></div></div>}</form></div><footer className="form-footer"><span><ShieldCheck size={17}/> Seus dados ficam salvos neste aparelho</span><div><button type="button" className="ghost" onClick={close}>Cancelar</button><button type="submit" form="car-form" className="primary" disabled={saveBlocked}><Check size={18}/>{saveBlocked ? 'Já está na garagem' : 'Salvar carrinho'}</button></div></footer></div></div>{previewPhoto && <PhotoViewer photo={previewPhoto === 'back' ? form.backPhoto : form.photo} alt={previewPhoto === 'back' ? 'Verso da embalagem antes de salvar' : 'Frente da embalagem antes de salvar'} onClose={() => setPreviewPhoto('')} />}</>;
 }
 
 const root = globalThis.__garagemPocketRoot || createRoot(document.getElementById('root'));

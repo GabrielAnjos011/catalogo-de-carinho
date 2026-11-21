@@ -4,6 +4,8 @@ import { ownedForRelease, releases, searchReleases } from './catalog';
 import { normalize, searchCars } from './search';
 
 const years = [...new Set(releases.map(item => item.year))].sort((a, b) => Number(b) - Number(a));
+const mainlineYears = years.filter(year => releases.some(item => item.year === year && item.source.includes('/List_of_')));
+const extrasCount = releases.length - releases.filter(item => item.source.includes('/List_of_')).length;
 const formatCount = count => count.toLocaleString('pt-BR');
 
 export default function Explore({ cars, query, setQuery, onSelect, onPick, onManual }) {
@@ -42,7 +44,7 @@ export default function Explore({ cars, query, setQuery, onSelect, onPick, onMan
     </div>}
 
     <div className="explore-section-title library-title"><div><small>BIBLIOTECA DE LANÇAMENTOS</small><h2>{query ? 'Resultados da biblioteca' : 'Para descobrir e adicionar'}</h2></div><span aria-live="polite">{formatCount(found.length)} {found.length === 1 ? 'registro' : 'registros'}</span></div>
-    <p className="explore-scope">Mainline de {years.at(-1)} a {years[0]}. Você também pode cadastrar qualquer carrinho manualmente.</p>
+    <p className="explore-scope">Mainline de {mainlineYears.at(-1)} a {mainlineYears[0]} e {extrasCount} lançamentos adicionais verificados. Você também pode cadastrar qualquer carrinho manualmente.</p>
     {visible.length ? <div className="release-list">{visible.map(item => {
       const matches = ownedForRelease(cars, item);
       const photo = matches.find(car => car.photo)?.photo;
@@ -53,6 +55,6 @@ export default function Explore({ cars, query, setQuery, onSelect, onPick, onMan
       </button>;
     })}</div> : <div className="explore-empty"><Search size={27}/><strong>Não encontrei na biblioteca</strong><p>Tente outra parte do nome ou cadastre com os dados da sua embalagem.</p></div>}
     {found.length > visible.length && <button className="secondary explore-more" onClick={() => setLimit(current => current + 24)}>Mostrar mais {Math.min(24, found.length - visible.length)}</button>}
-    <p className="explore-credit">Dados das listas anuais da Hot Wheels Wiki: {years.map((option, index) => <React.Fragment key={option}>{index > 0 ? ', ' : ''}<a href={`https://hotwheels.fandom.com/wiki/List_of_${option}_Hot_Wheels`} target="_blank" rel="noreferrer">{option}</a></React.Fragment>)}. Adaptados em 29/10/2026 sob <a href="https://creativecommons.org/licenses/by-sa/3.0/" target="_blank" rel="noreferrer">CC BY-SA</a>. Fotos de terceiros não foram reproduzidas.</p>
+    <p className="explore-credit">Dados das listas anuais da Hot Wheels Wiki: {mainlineYears.map((option, index) => <React.Fragment key={option}>{index > 0 ? ', ' : ''}<a href={`https://hotwheels.fandom.com/wiki/List_of_${option}_Hot_Wheels`} target="_blank" rel="noreferrer">{option}</a></React.Fragment>)}. Adicionais: <a href="https://hotwheels.fandom.com/wiki/Porsche_Series_(2015)" target="_blank" rel="noreferrer">Porsche Series 2015</a> e <a href="https://hotwheels.fandom.com/wiki/Ferrari_599XX" target="_blank" rel="noreferrer">Ferrari 599XX</a>. Adaptados sob <a href="https://creativecommons.org/licenses/by-sa/3.0/" target="_blank" rel="noreferrer">CC BY-SA</a>. Fotos de terceiros não foram reproduzidas.</p>
   </section>;
 }

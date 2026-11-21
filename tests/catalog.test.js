@@ -2,14 +2,16 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { releases, searchReleases, ownedForRelease, suggestReleasesFromOcr } from '../src/catalog.js';
 
-test('catálogo contém lançamentos com código único de 2017 a 2026', () => {
-  assert.equal(releases.length, 4284);
+test('catálogo contém Mainline de 2017 a 2026 e edições verificadas de 2015', () => {
+  assert.equal(releases.length, 4294);
   assert.deepEqual([...new Set(releases.map(item => item.year))].sort(),
-    ['2017', '2018', '2019', '2020', '2021', '2022', '2023', '2024', '2025', '2026']);
+    ['2015', '2017', '2018', '2019', '2020', '2021', '2022', '2023', '2024', '2025', '2026']);
   assert.equal(new Set(releases.map(item => item.id)).size, releases.length);
   assert.ok(releases.every(item => item.model && item.code && item.year && item.series && item.source));
   assert.equal(releases.find(item => item.code === 'DTX10')?.model, 'Aristo Rat');
   assert.equal(releases.find(item => item.code === 'FYC11')?.series, 'Factory Fresh');
+  assert.equal(releases.find(item => item.code === 'CGB69')?.seriesNo, '4/8');
+  assert.equal(releases.find(item => item.code === 'CFH83')?.model, 'Ferrari 599XX');
 });
 
 test('busca por nome parcial e código e distingue lançamentos', () => {
@@ -19,6 +21,8 @@ test('busca por nome parcial e código e distingue lançamentos', () => {
   const code = searchReleases('HYW18');
   assert.equal(code[0]?.model, 'Mazda MX-5 Miata');
   assert.equal(code[0]?.year, '2025');
+  assert.equal(searchReleases('Hot Wheels Porsche Series Porsche 993 GT2')[0]?.code, 'CGB69');
+  assert.ok(searchReleases('Ferrari 599XX HW Workshop').some(item => item.code === 'CFH83'));
 });
 
 test('marca como possuído só quando código ou vínculo do catálogo conferem', () => {

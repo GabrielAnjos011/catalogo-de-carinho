@@ -1,6 +1,8 @@
-import catalog from './catalog-data.json' with { type: 'json' };
+import mainline from './catalog-data.json' with { type: 'json' };
+import extras from './catalog-extra.json' with { type: 'json' };
 import { normalize } from './search.js';
 
+const catalog = [...mainline, ...extras];
 export const releases = catalog;
 
 export function searchReleases(query, year = 'Todos') {
@@ -8,7 +10,7 @@ export function searchReleases(query, year = 'Todos') {
   const result = catalog.filter(item => {
     if (year !== 'Todos' && item.year !== year) return false;
     if (!terms.length) return true;
-    const haystack = normalize([item.model, item.code, item.year, item.series, item.variant, item.collectorNo].join(' '));
+    const haystack = normalize(['Hot Wheels', item.model, item.code, item.year, item.series, item.variant, item.collectorNo, item.line].join(' '));
     return terms.every(term => haystack.includes(term));
   });
   if (!terms.length) return result.sort((a, b) => Number(b.year) - Number(a.year) || Number(a.collectorNo) - Number(b.collectorNo));

@@ -28,17 +28,20 @@ if (app && import.meta.env.VITE_FIREBASE_APPCHECK_SITE_KEY) {
 const auth = app ? getAuth(app) : null;
 const firestore = app ? getFirestore(app) : null;
 const approvalKey = uid => `garagem-approved-v1-${uid}`;
+const approvalFreshFor = 15 * 60 * 1000;
 
-async function approvedUser(current) {
+async function approvedUser(current, force = false) {
+  const cached = localStorage.getItem(approvalKey(current.uid));
+  if (!force && cached && Date.now() - Number(cached) < approvalFreshFor) return true;
   try {
     const approval = await getDocFromServer(doc(firestore, 'approvedUsers', current.uid));
     const allowed = approval.exists() && approval.data().active === true;
-    if (allowed) localStorage.setItem(approvalKey(current.uid), 'yes');
+    if (allowed) localStorage.setItem(approvalKey(current.uid), String(Date.now()));
     else localStorage.removeItem(approvalKey(current.uid));
     return allowed;
   } catch (error) {
     if ((!navigator.onLine || ['unavailable', 'deadline-exceeded'].includes(error.code))
-      && localStorage.getItem(approvalKey(current.uid)) === 'yes') return true;
+      && cached) return true;
     throw error;
   }
 }
@@ -61,7 +64,7 @@ export async function login(email, password) {
   if (!auth) throw new Error('Firebase ainda não configurado.');
   const credential = await signInWithEmailAndPassword(auth, email, password);
   try {
-    if (!(await approvedUser(credential.user))) throw new Error('Esta conta ainda não foi aprovada para acessar a garagem.');
+    if (!(await approvedUser(credential.user, true))) throw new Error('Esta conta ainda não foi aprovada para acessar a garagem.');
     return credential;
   } catch (error) {
     await signOut(auth);
@@ -75,13 +78,23 @@ export async function logout() {
 
 export async function refreshApproval() {
   if (!auth?.currentUser) return false;
-  const allowed = await approvedUser(auth.currentUser);
+  const allowed = await approvedUser(auth.currentUser, true);
   if (!allowed) await signOut(auth);
   return allowed;
 }
 
 function carCollection(uid) {
   return collection(firestore, 'users', uid, 'cars');
+}
+
+export async function uploadCar(uid, car) {
+  if (!uid || !navigator.onLine) return;
+  await setDoc(doc(carCollection(uid), car.id), car);
+}
+
+export async function uploadProfile(uid, profile) {
+  if (!uid || !navigator.onLine) return;
+  await setDoc(doc(firestore, 'users', uid), profile);
 }
 
 export async function syncCars(uid) {

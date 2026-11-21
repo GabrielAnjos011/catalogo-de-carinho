@@ -19,6 +19,23 @@ export function possibleDuplicates(cars, target) {
     .sort((a, b) => Number(normalize(a.year) === normalize(target.year)) - Number(normalize(b.year) === normalize(target.year)));
 }
 
+export function ownedMatch(cars, target) {
+  const productCode = value => String(value || '').trim().toUpperCase().match(/^([A-Z]{3}\d{2})(?:-[A-Z0-9]{2,5})?$/)?.[1] || '';
+  const code = productCode(target.code);
+  const model = normalize(target.model);
+  const year = String(target.year || '').trim();
+  const series = normalize(target.series);
+  const color = normalize(target.color);
+  return cars.find(car => {
+    if (car.id === target.id) return false;
+    if (code && productCode(car.code) === code) return true;
+    if (target.catalogId && car.catalogId === target.catalogId) return true;
+    return !code && !car.code && model && year && series && color
+      && normalize(car.model) === model && String(car.year || '').trim() === year
+      && normalize(car.series) === series && normalize(car.color) === color;
+  }) || null;
+}
+
 const brand = /\b(?:nissan|porsche|porche|bmw|ford|chevrolet|chevy|ferrari|lamborghini|honda|toyota|dodge|mercedes(?:[- ]benz)?|volkswagen|vw|audi|mazda|subaru|mclaren|bugatti|aston martin|jeep|tesla|alfa romeo|fiat|renault|peugeot|cadillac|corvette|acura|lexus|hyundai|kia|pontiac|buick|mini|volvo|jaguar|land rover)\b/i;
 const packaging = /hot wheels|mattel|guarantee|warning|attention|collect them|for ages|made in|facebook|instagram|youtube|www\.|assortment|asst\b|copyright|\b[0-9]+\s*\/\s*[0-9]+\b|\bupc\b|\bbarcode\b|\bhw (?:exotics|imports|race day|art cars|dream garage)\b/i;
 const skuPattern = /\b[A-Z]{3}[0-9]{2}\b/g;

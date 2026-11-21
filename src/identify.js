@@ -5,7 +5,8 @@ const productCode = /\b[A-Z]{3}\d{2}\b/g;
 
 export function findByProductCode(value) {
   const code = String(value || '').trim().toUpperCase();
-  return /^[A-Z]{3}\d{2}$/.test(code) ? matchReleaseByCode(code) : [];
+  const base = code.match(/^([A-Z]{3}\d{2})(?:-[A-Z0-9]{2,5})?$/)?.[1];
+  return base ? matchReleaseByCode(base) : [];
 }
 
 export function identifyFromReadings(readings) {
@@ -19,7 +20,7 @@ export function identifyFromReadings(readings) {
   const names = lines.map(line => line.replace(/\s*\/\s*(?:COURSE|CURSO)\b.*$/i, '').trim())
     .filter(line => line.length >= 7 && line.length <= 55 && !/hot wheels|mattel|warning|attention|www\.|made in|copyright/i.test(line));
   const lineText = normalize(lines.join(' '));
-  const seriesNo = [...text.matchAll(/\b\d{1,2}\s*\/\s*(?:5|10)\b/g)].map(match => match[0].replace(/\s/g, ''));
+  const seriesNo = [...text.matchAll(/\b\d{1,2}\s*\/\s*\d{1,2}\b/g)].map(match => match[0].replace(/\s/g, ''));
   const collectorNo = [...text.matchAll(/\b(\d{1,3})\s*\/\s*250\b/g)].map(match => match[1]);
   const exactNames = names.flatMap(line => searchReleases(line)
     .filter(item => normalize(item.model) === normalize(line)));

@@ -4,6 +4,7 @@ import { findByProductCode, identifyFromFields, identifyFromReadings } from '../
 
 test('código do gancho encontra o Ford GT do exemplo sem exigir foto', () => {
   const matches = findByProductCode(' jjm05 ');
+  assert.equal(findByProductCode('JJM05-N7C5')[0]?.code, 'JJM05');
   assert.equal(matches.length, 1);
   assert.equal(matches[0].model, '2016 Ford GT Race');
   assert.equal(matches[0].year, '2026');

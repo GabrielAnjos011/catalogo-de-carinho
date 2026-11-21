@@ -56,7 +56,7 @@ export async function migrateLegacyCollection(uid) {
 export function newCar() {
   return {
     id: makeId(),
-    model: '', maker: 'Hot Wheels', series: '', year: '', color: '', code: '',
+    model: '', maker: 'Hot Wheels', series: '', seriesNo: '', collectorNo: '', year: '', color: '', code: '',
     condition: 'Lacrado', quantity: 1, location: '', notes: '', photo: '',
     createdAt: Date.now(), updatedAt: Date.now()
   };
