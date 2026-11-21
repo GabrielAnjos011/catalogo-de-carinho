@@ -82,45 +82,45 @@ export default function SmartCapture({ form, cars, uid, onSet, onPickRelease, on
     } finally { setAiBusy(false); }
   }
 
-  const codeMatches = findByProductCode(code);
-  const nameMatches = name.trim().length >= 4 ? searchReleases(name).slice(0, 8) : [];
-  const candidates = code.trim() ? codeMatches.map(item => ({ item, code: true, name: false }))
-    : name.trim() ? nameMatches.map(item => ({ item, code: false, name: true }))
+  const codeQuery = mode === 'code' ? code.trim() : '';
+  const nameQuery = mode === 'name' ? name.trim() : '';
+  const codeMatches = findByProductCode(codeQuery);
+  const nameMatches = nameQuery.length >= 4 ? searchReleases(nameQuery).slice(0, 8) : [];
+  const candidates = codeQuery ? codeMatches.map(item => ({ item, code: true, name: false }))
+    : nameQuery ? nameMatches.map(item => ({ item, code: false, name: true }))
       : reading?.candidates || [];
-  const directOwned = code.trim() ? ownedMatch(cars, { code }) : null;
-  const readOwned = !code.trim() && !name.trim() && reading
-    ? ownedMatch(cars, { code: reading.hints?.code || (reading.codes?.length === 1 ? reading.codes[0] : '') })
-      || (reading.candidates.length === 1 ? ownedMatch(cars, {
-        catalogId: reading.candidates[0].item.id, code: reading.candidates[0].item.code
-      }) : null)
+  const directOwned = codeQuery ? ownedMatch(cars, { code: codeQuery, year: form.year, catalogId: form.catalogId }) : null;
+  const readOwned = !codeQuery && !nameQuery && reading
+    ? reading.candidates.length === 1 ? ownedMatch(cars, {
+      catalogId: reading.candidates[0].item.id, code: reading.candidates[0].item.code, year: reading.candidates[0].item.year
+    }) : reading.candidates.length === 0 ? ownedMatch(cars, {
+      code: reading.hints?.code || (reading.codes?.length === 1 ? reading.codes[0] : ''), year: form.year
+    }) : null
     : null;
   const existing = directOwned || readOwned;
 
   useEffect(() => { onOwnedChange(existing); }, [existing?.id]);
   useEffect(() => {
-    const key = code.trim().length >= 5 ? `code:${code}` : name.trim().length >= 4 ? `name:${name}`
+    const key = codeQuery.length >= 5 ? `code:${codeQuery}` : nameQuery.length >= 4 ? `name:${nameQuery}`
       : reading ? `reading:${reading.raw || reading.error}` : '';
     if (!key || key === lastScroll.current) return;
     lastScroll.current = key;
     requestAnimationFrame(() => resultRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }));
-  }, [code, name, reading]);
+  }, [codeQuery, nameQuery, reading]);
 
-  const applyHint = (field, value) => {
-    onSet(field, value);
-    if (field === 'code') { setCode(value); setMode('code'); }
-  };
+  const applyHint = (field, value) => onSet(field, value);
   const hints = reading?.source === 'ai' ? [
     ['model', 'nome'], ['code', 'código'], ['series', 'série'],
     ['seriesNo', 'nº da série'], ['collectorNo', 'nº de coleção'], ['color', 'cor']
   ].filter(([field]) => reading.hints?.[field]) : [];
-  const hasOutcome = Boolean(existing || reading || candidates.length || code.trim().length >= 5);
+  const hasOutcome = Boolean(existing || reading || candidates.length || codeQuery.length >= 5);
 
   return <section className="smart-capture" aria-label="Cadastro inteligente">
     <div className="smart-head"><span className="step-label">01 / IDENTIFICAR</span><h3>Encontre sua versão</h3><p>Escolha como quer procurar. Depois, confira o resultado antes de cadastrar.</p></div>
     <div className="smart-methods" role="group" aria-label="Forma de identificação">
       {[['code', 'Pelo código'], ['photos', 'Pelas fotos'], ['name', 'Pelo nome']].map(([value, label]) =>
         <button type="button" key={value} className={mode === value ? 'active' : ''} aria-expanded={mode === value}
-          onClick={() => setMode(current => current === value ? null : value)}>{label}</button>)}
+          onClick={() => { if (value === 'code' && mode !== 'code') setCode(form.code || ''); setMode(current => current === value ? null : value); }}>{label}</button>)}
     </div>
     {mode === 'code' && <div className="smart-code"><label htmlFor="product-code">Código de 5 caracteres</label><p>Fica perto do gancho, no verso. Ex.: <strong>JJM05</strong>. Não é o código de barras.</p><div><input id="product-code" value={code} onChange={event => { const value = event.target.value.toUpperCase().slice(0, 12); setCode(value); onSet('code', value); setName(''); }} autoCapitalize="characters" autoComplete="off" placeholder="Ex.: JJM05"/><Search size={19}/></div></div>}
     {mode === 'photos' && <>
@@ -134,6 +134,9 @@ export default function SmartCapture({ form, cars, uid, onSet, onPickRelease, on
       <label htmlFor="smart-detail" className={`smart-closeup ${busy || aiBusy ? 'disabled' : ''}`}><Camera size={18}/><span><strong>Fotografar código ou nome de perto</strong><small>Opcional. Esta foto é usada só na identificação.</small></span><ChevronRight size={17}/></label>
       {(form.photo || form.backPhoto) && <button type="button" className="smart-read" disabled={busy || aiBusy} onClick={() => identify()}><ScanLine size={18}/>{busy ? `Lendo áreas importantes… ${progress}%` : 'Identificar pelas fotos'}</button>}
       {aiReady && (form.photo || form.backPhoto || originals.current.detail) && <>
+        <div className="smart-ai-review"><strong>Confira antes de usar a IA</strong><p>Amplie as fotos: o nome deve estar legível na frente e o código de 5 caracteres perto do gancho no verso. Se estiver cortado ou desfocado, toque em Trocar.</p><div>
+          {[['front', 'Frente', form.photo], ['back', 'Verso', form.backPhoto]].map(([side, label, photo]) => <button type="button" key={side} disabled={!photo} onClick={() => setPreview(side)} aria-label={photo ? `Ampliar ${label.toLowerCase()} antes da análise` : `${label} ainda não fotografado`}>{photo ? <img src={photo} alt=""/> : <Camera size={22}/>}<span>{label} · {photo ? 'ver foto' : 'pendente'}</span></button>)}
+        </div>{(!form.photo || !form.backPhoto) && <small>Com as duas faces, a IA tem mais informações para comparar.</small>}</div>
         <button type="button" className="smart-ai" disabled={busy || aiBusy} onClick={identifyWithAI}>{aiBusy ? 'Analisando com IA…' : 'Analisar com IA'}<small>Envia as fotos ao Google para sugerir os dados.</small></button>
         <div className="smart-ai-usage"><span>{usage.attempts} {usage.attempts === 1 ? 'tentativa' : 'tentativas'} hoje neste aparelho{usage.budget ? ` · ${Math.max(0, usage.budget - usage.attempts)} restantes na sua meta` : ''}</span>{usage.limited && <strong>O serviço recusou uma chamada por limite ou capacidade. Confira a cota oficial.</strong>}<details><summary>Acompanhar uso e definir meta</summary><p>O saldo real não é fornecido ao app. Esta contagem é só deste aparelho; outros aparelhos e limites por minuto ou tokens podem mudar a disponibilidade.</p><label>Meta diária de referência <input type="number" inputMode="numeric" min="1" max="10000" value={usage.budget || ''} placeholder="Ex.: 20" onChange={event => setUsage(setAiBudget(uid, event.target.value))}/></label><a href="https://aistudio.google.com/usage?tab=rate-limit" target="_blank" rel="noreferrer">Ver limites no Google AI Studio</a><a href="https://firebase.google.com/docs/ai-logic/monitoring" target="_blank" rel="noreferrer">Ver uso real no Firebase</a></details></div>
       </>}
@@ -141,9 +144,9 @@ export default function SmartCapture({ form, cars, uid, onSet, onPickRelease, on
     {mode === 'name' && <div className="smart-name"><label htmlFor="model-search">Busque o nome do carrinho</label><input id="model-search" type="search" value={name} onChange={event => { setName(event.target.value); setCode(''); onSet('code', ''); }} placeholder="Ex.: Porsche 993 GT2"/></div>}
     {hasOutcome && <div ref={resultRef} className="smart-outcome" aria-live="polite">
       {existing && <div className="smart-owned" role="alert"><AlertTriangle size={20}/><div><strong>Você já tem este carrinho</strong><p>{existing.model}{existing.year ? ` · ${existing.year}` : ''}{existing.color ? ` · ${existing.color}` : ''}. Abra o cadastro para conferir ou ajustar a quantidade.</p><button type="button" onClick={() => onSelectOwned(existing)}>Ver meu cadastro</button></div></div>}
-      {reading && !code.trim() && !name.trim() && <div className="smart-feedback" role="status"><strong>{reading.candidates.length ? `Possíveis versões encontradas${reading.source === 'ai' ? ' pela IA' : ''}` : 'Ainda não encontrei uma versão segura'}</strong><p>{reading.error || (reading.candidates.length ? 'Confira o código, ano e série antes de escolher.' : 'Tente uma foto de perto ou digite o código de cinco caracteres.')}</p>{reading.codes?.length > 0 && <small>Códigos lidos: {reading.codes.join(', ')}</small>}{hints.map(([field, label]) => <button type="button" key={field} onClick={() => applyHint(field, reading.hints[field])}><Check size={16}/>{form[field] === reading.hints[field] ? `${label} aplicado: ` : `Usar ${label}: `}{reading.hints[field]}</button>)}{reading.technical && <details><summary>Ver detalhe do erro</summary><pre>{reading.technical}</pre></details>}{reading.raw && <details><summary>Ver texto identificado nas fotos</summary><pre>{reading.raw}</pre></details>}</div>}
-      {code.trim().length >= 5 && !codeMatches.length && !existing && <p className="smart-no-result">Código não encontrado nesta biblioteca. Confira as letras ou continue o cadastro manual.</p>}
-      {candidates.length > 0 && <div className="smart-results"><span>{candidates.length} {candidates.length === 1 ? 'versão encontrada' : 'versões encontradas'}</span>{candidates.map(({ item, code: codeEvidence, name: nameEvidence, series, seriesNo }) => { const owned = ownedMatch(cars, { catalogId: item.id, code: item.code }); return <button type="button" key={item.id} className={owned ? 'is-owned' : ''} onClick={() => owned ? onSelectOwned(owned) : onPickRelease(item, { ...form, code: item.code })}><span><strong>{item.model}</strong><small>{item.year} · {item.series} · {item.code}{item.seriesNo ? ` · ${item.seriesNo}` : ''}</small>{owned ? <em>Já está na sua garagem · Ver cadastro</em> : codeEvidence && nameEvidence ? <em>Nome e código conferem</em> : nameEvidence && series && seriesNo ? <em>Nome, série e número conferem</em> : null}</span><ChevronRight size={19}/></button>; })}</div>}
+      {reading && !codeQuery && !nameQuery && <div className="smart-feedback" role="status"><strong>{reading.candidates.length ? `Possíveis versões encontradas${reading.source === 'ai' ? ' pela IA' : ''}` : 'Ainda não encontrei uma versão segura'}</strong><p>{reading.error || (reading.candidates.length ? 'Confira o código, ano e série antes de escolher.' : 'Tente uma foto de perto ou digite o código de cinco caracteres.')}</p>{reading.codes?.length > 0 && <small>Códigos lidos: {reading.codes.join(', ')}</small>}{hints.map(([field, label]) => <button type="button" key={field} onClick={() => applyHint(field, reading.hints[field])}><Check size={16}/>{form[field] === reading.hints[field] ? `${label} aplicado: ` : `Usar ${label}: `}{reading.hints[field]}</button>)}{reading.technical && <details><summary>Ver detalhe do erro</summary><pre>{reading.technical}</pre></details>}{reading.raw && <details><summary>Ver texto identificado nas fotos</summary><pre>{reading.raw}</pre></details>}</div>}
+      {codeQuery.length >= 5 && !codeMatches.length && !existing && <p className="smart-no-result">Código não encontrado nesta biblioteca. Confira as letras ou continue o cadastro manual.</p>}
+      {candidates.length > 0 && <div className="smart-results"><span>{candidates.length} {candidates.length === 1 ? 'versão encontrada' : 'versões encontradas'}</span>{candidates.map(({ item, code: codeEvidence, name: nameEvidence, series, seriesNo }) => { const owned = ownedMatch(cars, { catalogId: item.id, code: item.code, year: item.year }); return <button type="button" key={item.id} className={owned ? 'is-owned' : ''} onClick={() => owned ? onSelectOwned(owned) : onPickRelease(item, { ...form, code: item.code })}><span><strong>{item.model}</strong><small>{item.year} · {item.series} · {item.code}{item.seriesNo ? ` · ${item.seriesNo}` : ''}</small>{owned ? <em>Já está na sua garagem · Ver cadastro</em> : codeEvidence && nameEvidence ? <em>Nome e código conferem</em> : nameEvidence && series && seriesNo ? <em>Nome, série e número conferem</em> : null}</span><ChevronRight size={19}/></button>; })}</div>}
     </div>}
     <p className="smart-manual">Não achou? Preencha os detalhes abaixo para cadastrar sem a biblioteca.</p>
     {preview && <div className="photo-viewer" role="dialog" aria-modal="true" aria-label={preview === 'front' ? 'Foto da frente ampliada' : 'Foto do verso ampliada'}><div className="photo-viewer-bar"><span>{preview === 'front' ? 'Frente' : 'Verso'} da embalagem</span><button type="button" onClick={() => setPreview(null)} aria-label="Fechar foto">×</button></div><img src={preview === 'front' ? form.photo : form.backPhoto} alt={preview === 'front' ? 'Frente da embalagem ampliada' : 'Verso da embalagem ampliada'}/></div>}

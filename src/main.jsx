@@ -6,11 +6,13 @@ import { normalize, searchCars, possibleDuplicates, ownedMatch, extractHints, fi
 import { compressPhoto, recognizePhoto } from './image';
 import { suggestReleasesFromOcr } from './catalog';
 import { applyProfile, readProfile, storeProfile } from './profile';
+import { clearPending, clearSynced, hasPending, markPending } from './sync-pending';
 import OcrReview from './OcrReview';
 import SmartCapture from './SmartCapture';
 import Explore from './Explore';
 import QuickAdd from './QuickAdd';
 import ProfileEditor from './ProfileEditor';
+import SeriesProgress from './SeriesProgress';
 import AccessGate from './AccessGate';
 import './style.css';
 
@@ -19,6 +21,7 @@ const accessRequired = cloudConfigured || import.meta.env.PROD;
 const loadCloud = () => import('./cloud');
 const emptyDraft = () => newCar();
 const dateLabel = value => value ? new Date(value).toLocaleDateString('pt-BR') : '—';
+const cloudLabels = { checking: 'Verificando', pending: 'Pendente', syncing: 'Enviando', sent: 'Enviado', synced: 'Sincronizado' };
 
 function Placeholder({ small = false }) {
   return <div className={`car-placeholder ${small ? 'small' : ''}`}><div className="placeholder-glow" /><CarFront size={small ? 42 : 82} strokeWidth={1.3} /><span>GARAGEM</span></div>;
@@ -54,6 +57,8 @@ function App() {
   const [user, setUser] = useState(null);
   const [syncing, setSyncing] = useState(false);
   const [syncMessage, setSyncMessage] = useState('');
+  const [cloudStatus, setCloudStatus] = useState('local');
+  const [seriesJump, setSeriesJump] = useState(null);
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [authReady, setAuthReady] = useState(!cloudConfigured);
   const [authError, setAuthError] = useState('');
@@ -75,8 +80,10 @@ function App() {
   function notify(message) { setToast(message); clearTimeout(toastTimer.current); toastTimer.current = setTimeout(() => setToast(''), 4300); }
   async function runSync(uid = user?.uid) {
     if (!uid || syncInFlight.current) return;
+    const syncStartedAt = Date.now();
     syncInFlight.current = true;
     setSyncing(true);
+    setCloudStatus('syncing');
     try {
       const { syncCars, syncProfile } = await loadCloud();
       const result = await syncCars(uid);
@@ -84,10 +91,15 @@ function App() {
       if (activeUid.current !== uid) return;
       setProfile(syncedProfile);
       await reload(uid);
+      clearSynced(uid, syncStartedAt);
       localStorage.setItem(`garagem-last-sync-v1-${uid}`, String(Date.now()));
       setSyncMessage(`Atualizado agora · ${result.uploaded} enviados, ${result.downloaded} recebidos`);
+      setCloudStatus(hasPending(uid) ? 'pending' : 'synced');
     } catch (error) {
-      setSyncMessage(`Pendente: ${error.message}`);
+      if (activeUid.current === uid) {
+        setSyncMessage(`Pendente: ${error.message}`);
+        setCloudStatus('pending');
+      }
     } finally { syncInFlight.current = false; setSyncing(false); }
   }
 
@@ -105,14 +117,16 @@ function App() {
         if (error) setAuthError(error.message || 'Não foi possível verificar o acesso.');
         if (current) {
           lastApprovalCheck.current = Date.now();
+          if (activeUid.current !== current.uid) setSyncMessage('');
           activeUid.current = current.uid;
+          setCloudStatus('checking');
           setAuthError('');
           try { await migrateLegacyCollection(current.uid); await reload(current.uid); }
           catch (failure) { setAuthError(`Não foi possível abrir a coleção local: ${failure.message}`); }
           if (!active || activeUid.current !== current.uid) return;
           setProfile(readProfile(current.uid));
           setUser(current);
-        } else { activeUid.current = null; setUser(null); setCars([]); setLoaded(false); setProfile(readProfile()); }
+        } else { activeUid.current = null; setUser(null); setCars([]); setLoaded(false); setProfile(readProfile()); setCloudStatus('local'); setSyncMessage(''); }
         setAuthReady(true);
       });
     }).catch(error => { setAuthError(`Falha ao conectar Firebase: ${error.message}`); setAuthReady(true); });
@@ -128,11 +142,11 @@ function App() {
       const last = Number(localStorage.getItem(`garagem-last-sync-v1-${uid}`)) || 0;
       if (Date.now() - last < 5 * 60 * 1000) {
         const records = await allRecords(uid);
-        const pendingCar = records.some(car => Number(car.updatedAt) > last);
+        const pendingCar = records.some(car => Number(car.updatedAt) > last) || hasPending(uid);
         const pendingProfile = Number(readProfile(uid).updatedAt) > last;
-        if (!pendingCar && !pendingProfile) return;
+        if (!pendingCar && !pendingProfile) { if (!cancelled) setCloudStatus('synced'); return; }
       }
-      if (!cancelled) timer = setTimeout(() => runSync(uid), 700);
+      if (!cancelled) { setCloudStatus('pending'); timer = setTimeout(() => runSync(uid), 700); }
     })().catch(() => { if (!cancelled) timer = setTimeout(() => runSync(uid), 700); });
     return () => { cancelled = true; clearTimeout(timer); };
   }, [user?.uid, isOnline]);
@@ -181,6 +195,7 @@ function App() {
     const saved = { ...car, model, quantity: Number(car.quantity), updatedAt: Date.now() };
     try {
       await putCar(saved, user?.uid);
+      if (user) { markPending(user.uid, saved.id, saved.updatedAt); setCloudStatus('pending'); setSyncMessage('Salvo no aparelho; aguardando envio'); }
       await reload();
       setDraft(null);
       setQuickRelease(null);
@@ -188,8 +203,8 @@ function App() {
       setView(view === 'check' ? 'check' : 'collection');
       notify('Carrinho salvo na sua garagem.');
       if (user && isOnline) loadCloud().then(({ uploadCar }) => uploadCar(user.uid, saved))
-        .then(() => setSyncMessage('Carrinho enviado à nuvem'))
-        .catch(() => setSyncMessage('Carrinho salvo aqui; sincronização pendente'));
+        .then(() => { clearPending(user.uid, saved.id, saved.updatedAt); if (activeUid.current === user.uid) { setCloudStatus(hasPending(user.uid) ? 'pending' : 'sent'); setSyncMessage('Alterações enviadas à nuvem'); } })
+        .catch(() => { if (activeUid.current === user.uid) { setCloudStatus('pending'); setSyncMessage('Carrinho salvo aqui; sincronização pendente'); } });
       return true;
     } catch (error) { notify(`Não foi possível salvar: ${error.message}`); return false; }
   }
@@ -197,11 +212,13 @@ function App() {
   async function deleteSelected() {
     if (!selected || !window.confirm(`Excluir ${selected.model} da coleção?`)) return;
     const removed = await removeCar(selected, user?.uid);
+    if (user) { markPending(user.uid, removed.id, removed.updatedAt); setCloudStatus('pending'); setSyncMessage('Exclusão salva no aparelho; aguardando envio'); }
     await reload();
     setSelected(null);
     notify('Carrinho excluído.');
     if (user && isOnline) loadCloud().then(({ uploadCar }) => uploadCar(user.uid, removed))
-      .catch(() => setSyncMessage('Exclusão salva aqui; sincronização pendente'));
+      .then(() => { clearPending(user.uid, removed.id, removed.updatedAt); if (activeUid.current === user.uid) { setCloudStatus(hasPending(user.uid) ? 'pending' : 'sent'); setSyncMessage('Exclusão enviada à nuvem'); } })
+      .catch(() => { if (activeUid.current === user.uid) { setCloudStatus('pending'); setSyncMessage('Exclusão salva aqui; sincronização pendente'); } });
   }
 
   function openAdd() { setSelected(null); setQuickRelease(null); setDraft(newCar()); }
@@ -214,12 +231,20 @@ function App() {
   function pickRelease(release, draft = {}) { setSelected(null); setDraft(null); setQuickRelease({ ...release, initialDraft: typeof draft === 'string' ? { photo: draft } : draft }); }
   function saveIdentity(value) {
     const saved = storeProfile(value, false, user?.uid);
+    if (user) { markPending(user.uid, 'profile', saved.updatedAt); setCloudStatus('pending'); setSyncMessage('Personalização salva no aparelho; aguardando envio'); }
     setProfile(saved);
     notify('A identidade da sua garagem foi atualizada.');
     if (user && isOnline) loadCloud().then(({ uploadProfile }) => uploadProfile(user.uid, saved))
-      .catch(() => setSyncMessage('Personalização salva aqui; sincronização pendente'));
+      .then(() => { clearPending(user.uid, 'profile', saved.updatedAt); if (activeUid.current === user.uid) { setCloudStatus(hasPending(user.uid) ? 'pending' : 'sent'); setSyncMessage('Personalização enviada à nuvem'); } })
+      .catch(() => { if (activeUid.current === user.uid) { setCloudStatus('pending'); setSyncMessage('Personalização salva aqui; sincronização pendente'); } });
   }
   function addFromCheck() { setDraft({ ...newCar(), model: checkQuery.trim() }); setSelected(null); }
+  function openSeries(group) {
+    if (!group) { setSeriesJump(null); setCheckQuery(''); setView('check'); return; }
+    setSeriesJump({ year: group.year, series: group.series });
+    setCheckQuery(group.series);
+    setView('check');
+  }
   async function handleExport() {
     const data = { app: 'Garagem', version: 2, exportedAt: new Date().toISOString(), profile, cars };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
@@ -237,10 +262,16 @@ function App() {
       const safe = payload.cars.map(car => ({ ...car, updatedAt: Number(car.updatedAt) || Date.now(), createdAt: Number(car.createdAt) || Date.now(), quantity: Number(car.quantity) || 1 }));
       const existing = new Map((await allRecords(user?.uid)).map(car => [car.id, car]));
       const restoreTime = Date.now();
-      await importCars(safe.filter(car => !existing.has(car.id) || existing.get(car.id).deleted || car.updatedAt > existing.get(car.id).updatedAt)
-        .map(car => existing.get(car.id)?.deleted ? { ...car, deleted: false, updatedAt: restoreTime } : car), user?.uid);
+      const restored = safe.filter(car => !existing.has(car.id) || existing.get(car.id).deleted || car.updatedAt > existing.get(car.id).updatedAt)
+        .map(car => existing.get(car.id)?.deleted ? { ...car, deleted: false, updatedAt: restoreTime } : car);
+      await importCars(restored, user?.uid);
+      if (user) { for (const car of restored) markPending(user.uid, car.id, car.updatedAt); if (restored.length) { setCloudStatus('pending'); setSyncMessage('Backup restaurado no aparelho; aguardando envio'); } }
       await reload(); notify(`${safe.length} registro(s) verificados no backup.`);
-      if (payload.profile) setProfile(storeProfile(payload.profile, false, user?.uid));
+      if (payload.profile) {
+        const restoredProfile = storeProfile(payload.profile, false, user?.uid);
+        setProfile(restoredProfile);
+        if (user) { markPending(user.uid, 'profile', restoredProfile.updatedAt); setCloudStatus('pending'); }
+      }
       if (user && isOnline) await runSync(user.uid);
     } catch (error) { notify(`Falha na importação: ${error.message}`); }
     if (importInput.current) importInput.current.value = '';
@@ -273,7 +304,7 @@ function App() {
       </nav>
       <div className="sidebar-bottom">
         <div className="sidebar-tip"><div className="tip-icon"><ShieldCheck size={20} /></div><strong>Compra sem repeteco</strong><p>Pesquise aqui antes de levar um novo modelo para casa.</p></div>
-        <div className="sidebar-footer"><span className={`status-dot ${isOnline ? '' : 'offline'}`} />{user ? 'Nuvem conectada' : 'Dados neste aparelho'}</div>
+        <div className="sidebar-footer"><span className={`status-dot ${isOnline && cloudStatus !== 'pending' ? '' : 'offline'}`} />{!isOnline ? 'Sem conexão' : user ? cloudLabels[cloudStatus] || 'Verificando' : 'Dados neste aparelho'}</div>
       </div>
     </aside>
 
@@ -281,7 +312,7 @@ function App() {
       <header className="topbar">
         <div className="mobile-brand"><span className="brand-icon"><CarFront size={23} /></span><strong>Garagem<span>{profile.suffix}</span></strong></div>
         <div className="breadcrumb">MINHA GARAGEM <ChevronRight size={14} /> <b>{view === 'collection' ? 'Coleção' : view === 'check' ? 'Explorar' : 'Configurações'}</b></div>
-        <div className="top-actions"><span className={`sync-badge ${!isOnline ? 'disconnected' : ''}`}>{isOnline ? user ? <Cloud size={15} /> : <HardDrive size={15} /> : <WifiOff size={15} />}{!isOnline ? 'Offline' : user ? 'Na nuvem' : 'Local'}</span><button className="avatar" onClick={() => setView('settings')} title="Configurações">{profile.suffix.slice(0, 2).toUpperCase()}</button></div>
+        <div className="top-actions"><span className={`sync-badge ${!isOnline || cloudStatus === 'pending' ? 'disconnected' : ''}`} role="status">{!isOnline ? <WifiOff size={15} /> : user && cloudStatus === 'pending' ? <CloudOff size={15}/> : user ? <Cloud size={15} /> : <HardDrive size={15} />}{!isOnline ? 'Offline' : user ? cloudLabels[cloudStatus] || 'Verificando' : 'Local'}</span><button className="avatar" onClick={() => setView('settings')} title="Configurações">{profile.suffix.slice(0, 2).toUpperCase()}</button></div>
       </header>
 
       {view !== 'settings' ? <div className="page-content">
@@ -289,12 +320,13 @@ function App() {
         <section className="welcome-row"><div><span className="eyebrow"><span className="eyebrow-line" /> O SEU UNIVERSO EM MINIATURA</span><h1>Minha coleção<span className="accent-dot">.</span></h1><p>Todos os seus carrinhos, organizados e prontos para encontrar.</p></div><button className="primary desktop-add" onClick={openAdd}><Plus size={19} /> Adicionar carrinho</button></section>
         <section className="hero-banner"><div className="hero-copy"><span className="hero-kicker"><Sparkles size={15} /> LEVE SUA COLEÇÃO COM VOCÊ</span><h2>Achou um carrinho na loja?<br/><em>Confira antes de comprar.</em></h2><p>Pesquise pelo nome, marca ou código e descubra em segundos se ele já está na sua garagem.</p><button onClick={() => setView('check')} className="hero-button">Conferir agora <Search size={17} /></button></div><div className="hero-art" aria-hidden="true"><div className="hero-ring ring-one"/><div className="hero-ring ring-two"/><div className="hero-track"/><div className="hero-car"><div className="car-top"/><div className="car-body"/><div className="car-window"/><div className="wheel wheel-left"/><div className="wheel wheel-right"/></div><span className="hero-number">01 / 01</span></div></section>
         <section className="stats-grid" aria-label="Resumo da coleção"><div className="stat-card"><span className="stat-icon coral"><CarFront size={21}/></span><div><strong>{totalPieces}</strong><span>Carrinhos</span></div></div><div className="stat-card"><span className="stat-icon blue"><Package size={21}/></span><div><strong>{uniqueModels}</strong><span>Modelos diferentes</span></div></div><div className="stat-card"><span className="stat-icon cream"><ScanLine size={21}/></span><div><strong>{Math.max(0, duplicateModels)}</strong><span>Peças extras</span></div></div></section>
+        <SeriesProgress cars={cars} onOpen={openSeries}/>
         <section className="catalog-section"><div className="section-heading"><div><span className="eyebrow">O ACERVO</span><h2>Carrinhos na garagem <span>{cars.length}</span></h2></div><button className="text-button" onClick={openAdd}>Adicionar novo <Plus size={17}/></button></div><div className="toolbar"><label className="search-box" htmlFor="catalog-search"><Search size={20}/><input id="catalog-search" type="search" placeholder="Busque por modelo, marca, série ou código..." value={query} onChange={e => setQuery(e.target.value)} /><kbd>⌕</kbd></label><div className="filter-title"><ListFilter size={18}/> Filtrar</div></div><div className="filter-chips">{filters.map(option => <button key={option} className={filter === option ? 'selected' : ''} onClick={() => setFilter(option)}>{option}</button>)}</div>
           {!loaded ? <p className="empty-copy">Carregando sua garagem...</p> : filteredCars.length ? <div className="car-grid">{filteredCars.map(car => <button className="car-card" key={car.id} onClick={() => setSelected(car)}><div className="card-photo">{car.photo ? <img src={car.photo} alt={`Foto de ${car.model}`} /> : <Placeholder small />}<span className="card-condition">{car.condition || 'Lacrado'}</span></div><div className="card-info"><span className="card-maker">{car.maker || 'Hot Wheels'} {car.year ? `· ${car.year}` : ''}</span><h3>{car.model}</h3><p>{car.series || 'Série não informada'} {car.color ? `· ${car.color}` : ''}</p><div className="card-bottom"><span>{car.quantity > 1 ? `${car.quantity} unidades` : '1 unidade'}</span><ChevronRight size={17}/></div></div></button>)}</div> : <div className="empty-state"><div className="empty-illustration"><CarFront size={60} strokeWidth={1.25}/><span>01</span></div><h3>{query || filter !== 'Todos' ? 'Nenhum carrinho encontrado' : 'Sua garagem começa aqui'}</h3><p>{query || filter !== 'Todos' ? 'Tente outro nome ou remova os filtros.' : 'Cadastre seu primeiro carrinho com uma foto. Depois, é só pesquisar antes de comprar outro.'}</p>{query || filter !== 'Todos' ? <button className="secondary" onClick={() => { setQuery(''); setFilter('Todos'); }}>Limpar busca</button> : <button className="primary" onClick={openAdd}><Plus size={18}/> Adicionar primeiro carrinho</button>}</div>}
         </section>
          <footer className="page-footer">GARAGEM{profile.suffix.toUpperCase()} <span>·</span> FEITO PARA SUA COLEÇÃO</footer>
         </div>
-        <div hidden={view !== 'check'}><Explore cars={cars} query={checkQuery} setQuery={setCheckQuery} onSelect={setSelected} onPick={pickRelease} onManual={addFromExplore} /></div>
+        <div hidden={view !== 'check'}><Explore cars={cars} query={checkQuery} setQuery={setCheckQuery} seriesJump={seriesJump} onSelect={setSelected} onPick={pickRelease} onManual={addFromExplore} /></div>
       </div> : <div className="page-content settings-page"><span className="eyebrow"><span className="eyebrow-line"/> CONTROLE TOTAL</span><h1>Configurações<span className="accent-dot">.</span></h1><p className="page-subtitle">Seus dados, suas escolhas.</p><div className="settings-grid"><ProfileEditor profile={profile} onSave={saveIdentity}/><section className="setting-panel"><div className="panel-head"><span className="panel-icon"><Cloud size={24}/></span><div><h2>Sincronização na nuvem</h2><p>Guarde uma cópia e acesse em outros aparelhos.</p></div></div>{!cloudConfigured ? <div className="notice"><CloudOff size={21}/><p>O Firebase ainda não foi configurado. O catálogo funciona normalmente neste aparelho. Siga o README para ativar a sincronização gratuita.</p></div> : user ? <div className="cloud-connected"><div className="connected-user"><span><Check size={20}/></span><div><strong>{user.email}</strong><small>{syncMessage || 'Conta conectada'}</small></div></div><div className="settings-actions"><button className="secondary" disabled={syncing || !isOnline} onClick={() => runSync()}><RotateCw size={17} className={syncing ? 'spinning' : ''}/>{syncing ? 'Sincronizando...' : 'Sincronizar agora'}</button><button className="ghost" onClick={leaveAccount}><LogOut size={17}/> Sair da conta</button></div></div> : null}</section><section className="setting-panel"><div className="panel-head"><span className="panel-icon amber"><HardDrive size={24}/></span><div><h2>Backup da coleção</h2><p>Tenha uma cópia independente dos seus dados.</p></div></div><div className="backup-actions"><div><strong>Exportar catálogo</strong><span>Baixa um arquivo JSON com fotos e informações.</span><button className="secondary" onClick={handleExport}><Download size={18}/> Baixar backup</button></div><div><strong>Importar backup</strong><span>Restaura registros de um arquivo exportado.</span><button className="secondary" onClick={() => importInput.current?.click()}><Upload size={18}/> Escolher arquivo</button><input ref={importInput} type="file" accept="application/json,.json" hidden onChange={e => handleImport(e.target.files?.[0])}/></div></div></section></div><div className="privacy-note"><ShieldCheck size={20}/><span>As fotos são comprimidas no aparelho. A leitura local roda no navegador; ao escolher Analisar com IA, suas fotos são enviadas ao Google.</span></div></div>}
     </main>
 

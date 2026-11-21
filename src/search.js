@@ -28,8 +28,12 @@ export function ownedMatch(cars, target) {
   const color = normalize(target.color);
   return cars.find(car => {
     if (car.id === target.id) return false;
-    if (code && productCode(car.code) === code) return true;
     if (target.catalogId && car.catalogId === target.catalogId) return true;
+    if (target.catalogId && car.catalogId && target.catalogId !== car.catalogId) return false;
+    if (code && productCode(car.code) === code) {
+      if (year && car.year && String(car.year).trim() !== year) return false;
+      return true;
+    }
     return !code && !car.code && model && year && series && color
       && normalize(car.model) === model && String(car.year || '').trim() === year
       && normalize(car.series) === series && normalize(car.color) === color;

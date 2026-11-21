@@ -29,6 +29,8 @@ test('marca como possuído só quando código ou vínculo do catálogo conferem'
   const item = releases.find(release => release.code === 'HYW18');
   const cars = [{ model: item.model, year: item.year, code: '' }, { model: item.model, year: item.year, code: 'HYW18' }];
   assert.equal(ownedForRelease(cars, item).length, 1);
+  const reused = releases.find(release => release.id === '2023-GRX17');
+  assert.equal(ownedForRelease([{ catalogId: '2021-GRX17', code: 'GRX17', year: '2021' }], reused).length, 0);
 });
 
 test('OCR usa código exato e tolera grafia imperfeita do modelo', () => {

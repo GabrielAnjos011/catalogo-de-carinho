@@ -402,3 +402,28 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
   .identity-preview{padding:18px}
   .identity-preview strong{font-size:23px}
 }
+
+.series-progress{margin-top:28px}
+.series-progress-head{display:flex;align-items:end;justify-content:space-between;gap:12px;margin-bottom:12px}
+.series-progress-head h2{margin:5px 0 2px;font-size:22px;letter-spacing:-.5px}
+.series-progress-head p{margin:0;color:#84928a;font-size:11px}
+.series-progress-head>button{flex:none;background:none;color:var(--accent);font-size:11px;font-weight:800;padding:7px}
+.series-progress-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:11px}
+.series-progress-card{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;text-align:left;align-items:start;padding:16px;background:#fff;border:1px solid #e0ebe2;border-radius:11px;color:#203d2b}
+.series-progress-copy{min-width:0}.series-progress-copy strong,.series-progress-copy small{display:block}.series-progress-copy strong{font-family:Outfit,sans-serif;font-size:15px;line-height:1.2;overflow-wrap:anywhere}.series-progress-copy small{margin-top:5px;color:#778b7b;font-size:10px;line-height:1.35}
+.series-progress-number{font-family:Outfit,sans-serif;color:var(--accent);font-size:18px;font-weight:800}
+.series-progress-track{grid-column:1/-1;height:7px;background:#e8f1e9;border-radius:8px;overflow:hidden}.series-progress-track span{display:block;height:100%;background:var(--accent);border-radius:8px}
+.series-progress-link{grid-column:1/-1;display:flex;align-items:center;gap:3px;color:var(--accent);font-size:10px;font-weight:800}
+.series-progress-empty{padding:16px;border:1px dashed #d1e2d5;border-radius:10px;background:#f8fbf8}.series-progress-empty strong{font-family:Outfit,sans-serif;font-size:14px}.series-progress-empty p{margin:4px 0 9px;color:#728478;font-size:11px}.series-progress-empty button{display:inline-flex;align-items:center;gap:3px;padding:0;background:none;color:var(--accent);font-size:11px;font-weight:800}
+.explore-verdict{display:flex;align-items:flex-start;gap:11px;margin:0 0 15px;padding:13px 14px;border:1px solid #d8e9dc;border-radius:10px;background:#f1f9f2;color:#23603d}
+.explore-verdict.same-model,.explore-verdict.related{background:#fff8e9;border-color:#ead7ad;color:#76551e}
+.explore-verdict.none{background:#f5f7f5;border-color:#e0e5e0;color:#56675b}
+.explore-verdict>svg{flex:none;margin-top:2px}.explore-verdict strong{display:block;font-family:Outfit,sans-serif;font-size:14px}.explore-verdict p{margin:4px 0 0;font-size:11px;line-height:1.45;color:inherit;opacity:.85}
+.explore-owned-more{display:block;margin:9px auto 0;padding:9px 12px;border-radius:7px;background:#fff;color:var(--accent);font-size:11px;font-weight:800}
+.explore-search input::-webkit-search-cancel-button{display:none}
+.smart-ai-review{margin-top:12px;padding:12px;border:1px solid #d5e5d9;border-radius:10px;background:#fff}
+.smart-ai-review>strong{display:block;color:#254833;font-family:Outfit,sans-serif;font-size:14px}.smart-ai-review p{margin:4px 0 10px;color:#6d8171;font-size:10px;line-height:1.5}
+.smart-ai-review>div{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.smart-ai-review button{display:grid;grid-template-columns:42px minmax(0,1fr);align-items:center;gap:8px;min-height:52px;padding:5px;border:1px solid #d8e5db;border-radius:7px;background:#f8fbf8;color:#345841;text-align:left;font-size:10px;font-weight:800}
+.smart-ai-review button:disabled{opacity:.65}.smart-ai-review button img{width:42px;height:42px;object-fit:cover;border-radius:5px}.smart-ai-review button svg{justify-self:center}.smart-ai-review>small{display:block;margin-top:8px;color:#8a6b31;font-size:10px;line-height:1.4}
+@media(max-width:800px){.series-progress-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:560px){.series-progress{margin-top:24px}.series-progress-head h2{font-size:19px}.series-progress-head p{line-height:1.4}.series-progress-grid{grid-template-columns:1fr}.series-progress-card{padding:13px}.smart-ai-review button{grid-template-columns:34px minmax(0,1fr)}.smart-ai-review button img{width:34px;height:40px}}

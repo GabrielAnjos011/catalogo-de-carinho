@@ -88,12 +88,12 @@ function carCollection(uid) {
 }
 
 export async function uploadCar(uid, car) {
-  if (!uid || !navigator.onLine) return;
+  if (!uid || !navigator.onLine) throw new Error('Sem conexão para enviar o carrinho.');
   await setDoc(doc(carCollection(uid), car.id), car);
 }
 
 export async function uploadProfile(uid, profile) {
-  if (!uid || !navigator.onLine) return;
+  if (!uid || !navigator.onLine) throw new Error('Sem conexão para enviar o perfil.');
   await setDoc(doc(firestore, 'users', uid), profile);
 }
 

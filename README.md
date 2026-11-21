@@ -51,6 +51,8 @@ Esse endereço HTTP serve para testar a interface. No celular ele não é `local
 
 Se o app já está publicado, aprove **seu próprio UID antes de publicar as regras novas**. Sem o documento de aprovação, até a conta antiga deixa de acessar a coleção na nuvem.
 
+O indicador no cabeçalho distingue **Pendente** (alterações ainda guardadas no aparelho), **Enviando**, **Enviado** (gravação confirmada na nuvem) e **Sincronizado** (consulta e envio concluídos). Em **Ajustes**, a mensagem detalha o último resultado e permite sincronizar manualmente.
+
 Para revogar o acesso, altere `approvedUsers/{UID}.active` para `false` e, se desejar, desative a conta em **Authentication → Users**. A revogação bloqueia novas operações online pelas regras do Firestore. Um aparelho que já abriu a coleção pode manter uma cópia local disponível offline até se reconectar.
 
 **Importante:** retirar o botão de cadastro impede a criação pelo app, mas o Firebase Authentication com e-mail/senha ainda expõe uma API pública de cadastro. Uma conta criada diretamente por essa API não passa pela aprovação e não consegue acessar os dados. Para impedir até a criação do registro no Authentication, o Firebase exige recursos de bloqueio do Identity Platform, fora desta arquitetura gratuita.
@@ -91,9 +93,12 @@ Abra o endereço HTTPS no celular. No Android/Chrome, use **Instalar app** ou **
 ## Explorar e cadastrar rápido
 
 - **Explorar** reúne a busca na sua coleção e uma biblioteca de **4.284 lançamentos Mainline de 2017 a 2026**, mais **10 edições verificadas de 2015** (Porsche Series completa e duas Ferrari 599XX de HW Workshop). Pesquise por parte do nome ou pelo código de cinco caracteres da embalagem. O filtro de ano inclui todas essas edições. A [lista de lacunas](docs/catalog-coverage.md) orienta as próximas importações.
+- Ao conferir uma compra, a resposta separa **código já cadastrado**, **mesmo modelo em possível outra versão** e **resultados relacionados**. Compare sempre ano, série, cor e foto: códigos podem aparecer em edições de anos diferentes. A lista da sua garagem permite ver todos os registros relacionados, e os lançamentos distinguem **Adicionar** de **Já tenho**.
+- Na página da coleção, **Progresso por série** mostra quantas versões você possui entre os lançamentos daquela série e ano **presentes nesta biblioteca**. Toque em uma série para explorar as versões restantes. O indicador não representa uma lista oficial completa quando a cobertura da biblioteca é parcial.
 - **Adicionar** oferece três formas recolhidas de identificação: código, fotos ou nome. Digite o código Mattel de cinco caracteres sem fotografar, ou fotografe frente e verso e toque em **Identificar pelas fotos**. O app mostra as versões encontradas e rola até o resultado. Se a versão ou o código já estiver na garagem, oferece abrir o registro e impede um segundo cadastro com o mesmo identificador. As fotos acompanham o cadastro rápido. Se não encontrar, continue no formulário manual.
 - Um cartão cinza significa que aquela versão ainda não foi vinculada à sua coleção. Ao cadastrá-la, sua foto aparece no cartão e o estado muda para **Tenho**. Variações de cor ou embalagem podem ser registradas separadamente.
 - Ao escolher um lançamento, o cadastro rápido já traz nome, série, ano da lista e código. Compare o código com a embalagem; depois informe foto, cor, quantidade e estado. Local e observações são opcionais.
+- Antes de analisar fotos com IA, o cadastro oferece uma revisão ampliável da frente e do verso e indica quando falta uma das faces, ajudando a evitar tentativas com imagens cortadas ou ilegíveis.
 - Caso não encontre o carrinho, use **Cadastrar sem escolher da biblioteca**. Esse caminho também aceita miniaturas de outras marcas e anos.
 - Os dados da biblioteca vêm das listas anuais da [Hot Wheels Wiki](https://hotwheels.fandom.com/wiki/List_of_Hot_Wheels), adaptados sob CC BY-SA. Cada lançamento traz um link para sua lista de origem. Nenhuma foto de terceiros foi incorporada. A biblioteca ainda não abrange todas as linhas ou anos; os anteriores a 2017 têm formatos diferentes e exigem uma importação própria para evitar dados incorretos.
 

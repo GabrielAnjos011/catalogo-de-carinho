@@ -4,9 +4,14 @@ import { normalize } from './search.js';
 
 const catalog = [...mainline, ...extras];
 export const releases = catalog;
+const productCode = value => String(value || '').trim().toUpperCase()
+  .match(/^([A-Z]{3}\d{2})(?:-[A-Z0-9]{2,5})?$/)?.[1] || '';
+const codeFrequency = new Map();
+for (const release of catalog) codeFrequency.set(release.code, (codeFrequency.get(release.code) || 0) + 1);
 
 export function searchReleases(query, year = 'Todos') {
-  const terms = normalize(query).split(' ').filter(Boolean);
+  const code = String(query || '').trim().toUpperCase().match(/^([A-Z]{3}\d{2})(?:-[A-Z0-9]{2,5})?$/)?.[1];
+  const terms = normalize(code || query).split(' ').filter(Boolean);
   const result = catalog.filter(item => {
     if (year !== 'Todos' && item.year !== year) return false;
     if (!terms.length) return true;
@@ -14,7 +19,7 @@ export function searchReleases(query, year = 'Todos') {
     return terms.every(term => haystack.includes(term));
   });
   if (!terms.length) return result.sort((a, b) => Number(b.year) - Number(a.year) || Number(a.collectorNo) - Number(b.collectorNo));
-  const needle = normalize(query);
+  const needle = normalize(code || query);
   return result.sort((a, b) => {
     const score = item => item.code.toLowerCase() === needle ? 0
       : normalize(item.model) === needle ? 1
@@ -24,7 +29,9 @@ export function searchReleases(query, year = 'Todos') {
 }
 
 export function ownedForRelease(cars, release) {
-  return cars.filter(car => car.catalogId === release.id || (car.code && car.code.toUpperCase() === release.code));
+  return cars.filter(car => car.catalogId === release.id || (!car.catalogId && release.code
+    && productCode(car.code) === release.code && (car.year
+      ? String(car.year) === String(release.year) : codeFrequency.get(release.code) === 1)));
 }
 
 export function matchReleaseByCode(code) {

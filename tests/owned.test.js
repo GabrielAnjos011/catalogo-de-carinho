@@ -10,6 +10,7 @@ test('impede código repetido, mas não confunde versões de códigos diferentes
   assert.equal(ownedMatch(cars, { catalogId: '2015-CGB69' })?.id, 'one');
   assert.equal(ownedMatch(cars, { model: 'Porsche 993 GT2', code: 'OUT11' }), null);
   assert.equal(ownedMatch(cars, { id: 'one', code: 'CGB69' }), null);
+  assert.equal(ownedMatch(cars, { catalogId: '2023-CGB69', code: 'CGB69', year: '2023' }), null);
 });
 
 test('contador da IA guarda tentativas e meta apenas neste aparelho', () => {
